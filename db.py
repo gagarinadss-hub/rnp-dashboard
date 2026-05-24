@@ -250,6 +250,10 @@ def get_dashboard_from_db(launch_id: int) -> dict:
             (launch_id,)
         ).fetchall()
 
+        # yesterday / day-before indices (0-based)
+        yesterday_idx   = days_elapsed - 2   # day before today
+        day_before_idx  = days_elapsed - 3   # two days ago
+
         channels = []
         for ch in ch_rows:
             dregs = conn.execute(
@@ -274,15 +278,32 @@ def get_dashboard_from_db(launch_id: int) -> dict:
 
             pct = round(total_actual_ch / ch_plan * 100, 1) if ch_plan > 0 else 0
 
+            # Yesterday / delta per channel
+            ch_yesterday  = daily_actual[yesterday_idx]  if 0 <= yesterday_idx  < total_days else 0
+            ch_day_before = daily_actual[day_before_idx] if 0 <= day_before_idx < total_days else 0
+            ch_delta      = ch_yesterday - ch_day_before
+
+            # Pace: actual per elapsed day vs plan per day
+            actual_pace = total_actual_ch / days_elapsed if days_elapsed > 0 else 0
+            target_pace = ch_plan / total_days if total_days > 0 and ch_plan > 0 else 0
+            pace_ratio  = round(actual_pace / target_pace, 2) if target_pace > 0 else 0
+
+            # Per-channel forecast: current pace projected to end
+            ch_forecast = int(actual_pace * total_days) if actual_pace > 0 else total_actual_ch
+
             channels.append({
-                "channel_id":   ch["ch_id"],
-                "name":         ch["ch_name"],
-                "plan":         ch_plan,
-                "actual":       total_actual_ch,
-                "pct":          pct,
-                "responsible":  ch["responsible"] or "",
-                "daily_plan":   daily_plan,
-                "daily_actual": daily_actual,
+                "channel_id":    ch["ch_id"],
+                "name":          ch["ch_name"],
+                "plan":          ch_plan,
+                "actual":        total_actual_ch,
+                "pct":           pct,
+                "responsible":   ch["responsible"] or "",
+                "daily_plan":    daily_plan,
+                "daily_actual":  daily_actual,
+                "yesterday":     ch_yesterday,
+                "yesterday_delta": ch_delta,
+                "pace_ratio":    pace_ratio,
+                "forecast":      ch_forecast,
             })
 
         total_plan   = l["total_plan"] or sum(c["plan"] for c in channels)
@@ -316,17 +337,35 @@ def get_dashboard_from_db(launch_id: int) -> dict:
         today_plan   = daily_plan_list[today_idx]    if 0 <= today_idx < len(daily_plan_list) else 0
         today_pct    = round(today_actual / today_plan * 100, 1) if today_plan > 0 else 0
 
-        # Forecast: average of days with data
-        past_actual_days = daily_total_actual[:days_elapsed]
-        good_days = [a for a in past_actual_days if a > 0]
-        if good_days:
-            avg_daily      = sum(good_days) / len(good_days)
-            projected_total = int(avg_daily * total_days)
-        else:
-            projected_total = total_actual
-        projected_pct = round(projected_total / total_plan * 100, 1) if total_plan > 0 else 0
+        # Yesterday totals (for whole launch)
+        yesterday_actual   = daily_total_actual[yesterday_idx]  if 0 <= yesterday_idx  < total_days else 0
+        day_before_actual  = daily_total_actual[day_before_idx] if 0 <= day_before_idx < total_days else 0
+        yesterday_delta    = yesterday_actual - day_before_actual
 
-        # Cumulative forecast: real for past days, projected avg for future
+        # Pace needed to hit plan
+        total_remaining = max(0, total_plan - total_actual)
+        pace_needed     = round(total_remaining / days_remaining) if days_remaining > 0 else 0
+
+        # Forecast scenarios
+        completed_days = daily_total_actual[:days_elapsed]
+        good_days      = [a for a in completed_days if a > 0]
+        avg_all        = sum(good_days) / len(good_days) if good_days else 0
+
+        # Realistic: average of all days
+        proj_realistic  = int(avg_all * total_days) if avg_all > 0 else total_actual
+
+        # Optimistic: average of top-3 days
+        top3 = sorted(good_days, reverse=True)[:3]
+        proj_optimistic = int((sum(top3) / len(top3)) * total_days) if top3 else proj_realistic
+
+        # Pessimistic: average of last-3 days (may be declining)
+        last3 = good_days[-3:] if len(good_days) >= 3 else good_days
+        proj_pessimistic = int((sum(last3) / len(last3)) * total_days) if last3 else proj_realistic
+
+        projected_total = proj_realistic
+        projected_pct   = round(projected_total / total_plan * 100, 1) if total_plan > 0 else 0
+
+        # Cumulative forecast line (real + projected average for future)
         avg_for_future = int(total_actual / max(days_elapsed, 1))
         forecast_cum   = _cumulative(daily_total_actual[:days_elapsed])
         for _ in range(days_elapsed, total_days):
@@ -334,7 +373,7 @@ def get_dashboard_from_db(launch_id: int) -> dict:
 
         confidence = "высокая" if days_elapsed >= 3 else ("средняя" if days_elapsed >= 1 else "низкая")
 
-        # Best / lag channels
+        # Best / lag channels (sorted by pace_ratio)
         active_chs    = [c for c in channels if c["plan"] > 0 and c["actual"] > 0]
         best_channels = sorted(active_chs, key=lambda x: x["pct"], reverse=True)[:3]
         lag_channels  = sorted(
@@ -344,23 +383,26 @@ def get_dashboard_from_db(launch_id: int) -> dict:
 
         return {
             "overview": {
-                "launch_id":      launch_id,
-                "launch_name":    l["name"],
-                "start_date":     str(reg_start),
-                "end_date":       str(reg_end),
-                "event_date":     l["event_date"],
-                "event_end_date": l["event_end_date"],
-                "total_plan":     total_plan,
-                "total_actual":   total_actual,
-                "completion_pct": completion_pct,
-                "days_elapsed":   days_elapsed,
-                "days_total":     total_days,
-                "days_remaining": days_remaining,
-                "today_actual":   today_actual,
-                "today_plan":     today_plan,
-                "today_pct":      today_pct,
-                "last_updated":   datetime.now().isoformat(),
-                "_source":        "db",
+                "launch_id":        launch_id,
+                "launch_name":      l["name"],
+                "start_date":       str(reg_start),
+                "end_date":         str(reg_end),
+                "event_date":       l["event_date"],
+                "event_end_date":   l["event_end_date"],
+                "total_plan":       total_plan,
+                "total_actual":     total_actual,
+                "completion_pct":   completion_pct,
+                "days_elapsed":     days_elapsed,
+                "days_total":       total_days,
+                "days_remaining":   days_remaining,
+                "today_actual":     today_actual,
+                "today_plan":       today_plan,
+                "today_pct":        today_pct,
+                "yesterday_actual": yesterday_actual,
+                "yesterday_delta":  yesterday_delta,
+                "pace_needed":      pace_needed,
+                "last_updated":     datetime.now().isoformat(),
+                "_source":          "db",
             },
             "daily": {
                 "dates":             day_dates,
@@ -371,14 +413,63 @@ def get_dashboard_from_db(launch_id: int) -> dict:
             },
             "channels": channels,
             "forecast": {
-                "projected_total":   projected_total,
-                "projected_pct":     projected_pct,
-                "confidence":        confidence,
+                "projected_total":    projected_total,
+                "projected_pct":      projected_pct,
+                "confidence":         confidence,
+                "pessimistic":        proj_pessimistic,
+                "realistic":          proj_realistic,
+                "optimistic":         proj_optimistic,
+                "pessimistic_pct":    round(proj_pessimistic / total_plan * 100, 1) if total_plan > 0 else 0,
+                "optimistic_pct":     round(proj_optimistic  / total_plan * 100, 1) if total_plan > 0 else 0,
                 "cumulative_forecast": forecast_cum,
-                "cumulative_plan":   _cumulative(daily_plan_list),
+                "cumulative_plan":    _cumulative(daily_plan_list),
             },
             "best_channels": [{"name": c["name"], "pct": c["pct"], "actual": c["actual"]} for c in best_channels],
             "lag_channels":  [{"name": c["name"], "pct": c["pct"], "plan": c["plan"], "actual": c["actual"]} for c in lag_channels],
+        }
+
+
+def get_comparison_data(launch_id: int, ref_launch_id: int) -> dict:
+    """Compare two launches aligned by day number."""
+    with get_db() as conn:
+        def _info(lid):
+            return conn.execute(
+                "SELECT id, name, total_plan FROM launches WHERE id=?", (lid,)
+            ).fetchone()
+
+        def _daily(lid):
+            rows = conn.execute(
+                """SELECT day_num, SUM(count) as total
+                   FROM daily_registrations WHERE launch_id=?
+                   GROUP BY day_num ORDER BY day_num""", (lid,)
+            ).fetchall()
+            return {r["day_num"]: r["total"] for r in rows}
+
+        main_info = _info(launch_id)
+        ref_info  = _info(ref_launch_id)
+        if not main_info or not ref_info:
+            return None
+
+        main_daily = _daily(launch_id)
+        ref_daily  = _daily(ref_launch_id)
+
+        max_day = max(
+            max(main_daily.keys(), default=0),
+            max(ref_daily.keys(),  default=0)
+        )
+        days = list(range(1, max_day + 1))
+
+        main_data = [main_daily.get(d, 0) for d in days]
+        ref_data  = [ref_daily.get(d,  0) for d in days]
+
+        return {
+            "launch":    {"id": launch_id,     "name": main_info["name"], "plan": main_info["total_plan"]},
+            "reference": {"id": ref_launch_id, "name": ref_info["name"],  "plan": ref_info["total_plan"]},
+            "days": days,
+            "main_daily":      main_data,
+            "ref_daily":       ref_data,
+            "main_cumulative": _cumulative(main_data),
+            "ref_cumulative":  _cumulative(ref_data),
         }
 
 

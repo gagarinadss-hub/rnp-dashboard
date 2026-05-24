@@ -30,6 +30,10 @@
         <span class="nav-icon">🏷️</span>
         <span class="nav-label">UTM Метки</span>
       </button>
+      <button class="nav-item" data-tab="compare">
+        <span class="nav-icon">⚖️</span>
+        <span class="nav-label">Сравнение</span>
+      </button>
       <button class="nav-item" data-tab="launches">
         <span class="nav-icon">📋</span>
         <span class="nav-label">История</span>
@@ -110,7 +114,7 @@
         </div>
 
         <!-- KPI row -->
-        <div class="kpi-grid">
+        <div class="kpi-grid kpi-grid-5">
           <div class="kpi-card">
             <div class="kpi-icon">📋</div>
             <div class="kpi-body">
@@ -127,23 +131,34 @@
               <div class="kpi-sub" id="kpi-fact-pct">—% от плана</div>
             </div>
           </div>
-          <div class="kpi-card">
-            <div class="kpi-icon">🎯</div>
+          <div class="kpi-card kpi-card--yesterday">
+            <div class="kpi-icon">📅</div>
             <div class="kpi-body">
-              <div class="kpi-label">Прогноз итого</div>
-              <div class="kpi-value" id="kpi-forecast">—</div>
-              <div class="kpi-sub" id="kpi-forecast-pct">—% от плана</div>
+              <div class="kpi-label">Вчера</div>
+              <div class="kpi-value" id="kpi-yesterday">—</div>
+              <div class="kpi-sub" id="kpi-yesterday-delta">—</div>
             </div>
           </div>
-          <div class="kpi-card">
-            <div class="kpi-icon">🏆</div>
+          <div class="kpi-card kpi-card--forecast">
+            <div class="kpi-icon">🎯</div>
             <div class="kpi-body">
-              <div class="kpi-label">Лучший канал</div>
-              <div class="kpi-value kpi-value--sm" id="kpi-top-ch">—</div>
-              <div class="kpi-sub" id="kpi-top-ch-sub">—</div>
+              <div class="kpi-label">Прогноз финала</div>
+              <div class="kpi-value" id="kpi-forecast">—</div>
+              <div class="kpi-sub" id="kpi-forecast-pct">—</div>
+            </div>
+          </div>
+          <div class="kpi-card kpi-card--pace">
+            <div class="kpi-icon">⚡</div>
+            <div class="kpi-body">
+              <div class="kpi-label">Нужно в день</div>
+              <div class="kpi-value" id="kpi-pace">—</div>
+              <div class="kpi-sub" id="kpi-pace-sub">чтобы выйти на план</div>
             </div>
           </div>
         </div>
+
+        <!-- Forecast scenarios row -->
+        <div class="forecast-row" id="forecastRow"></div>
 
         <!-- Charts + Insight row -->
         <div class="charts-row">
@@ -303,6 +318,49 @@
             <button class="btn-secondary" id="utmRefreshBtn" style="margin-left:8px">↻ Обновить список</button>
             <span id="utmSaveStatus" style="font-size:13px;color:var(--text-sub);margin-left:12px"></span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPARE TAB -->
+    <div id="tab-compare" class="tab-content">
+      <div class="page-container">
+        <div class="channels-tab-header">
+          <div>
+            <h2>⚖️ Сравнение запусков</h2>
+            <p class="tab-subtitle">Сравни текущий запуск с предыдущими по дням</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <label class="form-label" style="margin:0;font-size:13px">Сравнить с:
+              <select id="compareRefSelect" class="launch-select" style="margin-top:4px">
+                <option value="">Выбери запуск...</option>
+              </select>
+            </label>
+            <button class="btn-primary" id="compareLoadBtn">Сравнить</button>
+          </div>
+        </div>
+
+        <div id="compareResult" style="display:none">
+          <div class="kpi-grid" id="compareKpiGrid" style="margin-bottom:20px"></div>
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-head">
+              <h3>Накопленные регистрации по дням</h3>
+              <div class="chart-legend" id="compareLegend"></div>
+            </div>
+            <canvas id="compareChart" height="100"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>По дням — детальное сравнение</h3></div>
+            <div class="table-wrap">
+              <table class="ch-table">
+                <thead id="compareTableHead"></thead>
+                <tbody id="compareTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div id="compareEmpty" style="color:var(--text-sub);padding:40px 0;text-align:center">
+          Выбери запуск для сравнения
         </div>
       </div>
     </div>

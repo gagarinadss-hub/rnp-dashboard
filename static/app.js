@@ -51,6 +51,7 @@ document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
     if (tab === 'launches') loadLaunches();
     if (tab === 'channels') renderChannelsTab();
     if (tab === 'utm')      loadUtmTab();
+    if (tab === 'compare')  initCompareTab();
   });
 });
 
@@ -160,14 +161,66 @@ function renderDashboard() {
   document.getElementById('hero-actual').textContent  = fmt(o.total_actual);
   document.getElementById('kpi-fact-pct').textContent = `${o.completion_pct}% от плана`;
 
-  // Карточка 3: Прогноз
-  document.getElementById('kpi-forecast').textContent     = fmt(f.projected_total);
-  document.getElementById('kpi-forecast-pct').textContent = `${f.projected_pct}% от плана`;
+  // Карточка 3: Вчера
+  const yd = o.yesterday_actual ?? 0;
+  const ydDelta = o.yesterday_delta ?? 0;
+  document.getElementById('kpi-yesterday').textContent = fmt(yd);
+  const deltaEl = document.getElementById('kpi-yesterday-delta');
+  if (ydDelta !== 0) {
+    const sign = ydDelta > 0 ? '+' : '';
+    deltaEl.textContent = `${sign}${fmt(ydDelta)} vs позавчера`;
+    deltaEl.className = `kpi-sub ${ydDelta > 0 ? 'delta-up' : 'delta-down'}`;
+  } else {
+    deltaEl.textContent = 'нет сравнения';
+    deltaEl.className = 'kpi-sub';
+  }
 
-  // Карточка 4: Лучший канал
-  const topCh = (dashState.best_channels || [])[0];
-  document.getElementById('kpi-top-ch').textContent     = topCh ? topCh.name : '—';
-  document.getElementById('kpi-top-ch-sub').textContent = topCh ? `${topCh.pct}% выполнения` : '—';
+  // Карточка 4: Прогноз финала
+  document.getElementById('kpi-forecast').textContent = fmt(f.projected_total);
+  const fPct = f.projected_pct;
+  const fSub = document.getElementById('kpi-forecast-pct');
+  fSub.textContent = `${fPct}% от плана`;
+  fSub.className = `kpi-sub ${fPct >= 90 ? 'delta-up' : fPct >= 70 ? '' : 'delta-down'}`;
+
+  // Карточка 5: Нужно в день
+  const pace = o.pace_needed ?? 0;
+  document.getElementById('kpi-pace').textContent = pace > 0 ? fmt(pace) : '—';
+  document.getElementById('kpi-pace-sub').textContent = pace > 0
+    ? `в день × ${o.days_remaining} дн. = ${fmt(pace * o.days_remaining)}`
+    : 'план выполнен или нет данных';
+
+  // ── Forecast scenarios ─────────────────────────────────────────────────
+  const forecastRow = document.getElementById('forecastRow');
+  if (forecastRow && f.pessimistic) {
+    const pPct = f.pessimistic_pct ?? 0;
+    const oPct = f.optimistic_pct  ?? 0;
+    forecastRow.innerHTML = `
+      <div class="forecast-scenario forecast-pess">
+        <div class="fs-label">Пессимист</div>
+        <div class="fs-value">${fmt(f.pessimistic)}</div>
+        <div class="fs-pct">${pPct}%</div>
+        <div class="fs-hint">если темп упадёт</div>
+      </div>
+      <div class="forecast-scenario forecast-real">
+        <div class="fs-label">Реалист ★</div>
+        <div class="fs-value">${fmt(f.realistic)}</div>
+        <div class="fs-pct">${f.projected_pct}%</div>
+        <div class="fs-hint">средний темп</div>
+      </div>
+      <div class="forecast-scenario forecast-opt">
+        <div class="fs-label">Оптимист</div>
+        <div class="fs-value">${fmt(f.optimistic)}</div>
+        <div class="fs-pct">${oPct}%</div>
+        <div class="fs-hint">лучшие 3 дня</div>
+      </div>
+      <div class="forecast-scenario forecast-plan">
+        <div class="fs-label">План</div>
+        <div class="fs-value">${fmt(o.total_plan)}</div>
+        <div class="fs-pct">100%</div>
+        <div class="fs-hint">цель</div>
+      </div>
+    `;
+  }
 
   // ── Insight row ────────────────────────────────────────────────────────
   document.getElementById('kpi-today').textContent     = fmt(o.today_actual);
@@ -461,8 +514,15 @@ function renderChannelGrid(channels, comments, launchId, canEdit) {
   }
 
   // Number of sticky columns
-  const STICKY_COLS = 6;
+  const STICKY_COLS = 8;  // name, resp, plan, fact, yesterday, delta, pace, pct
   const totalCols   = STICKY_COLS + daysTotal;
+
+  // Sort channels: behind plan first (ascending pct), then by actual desc
+  const sortedChannels = [...channels].sort((a, b) => {
+    const aPct = a.plan > 0 ? a.actual / a.plan : (a.actual > 0 ? 99 : -1);
+    const bPct = b.plan > 0 ? b.actual / b.plan : (b.actual > 0 ? 99 : -1);
+    return aPct - bPct;
+  });
 
   // Build thead
   let dayHeads = '';
@@ -472,11 +532,28 @@ function renderChannelGrid(channels, comments, launchId, canEdit) {
     dayHeads += `<th class="ch-grid-day-head${hlClass}" data-day="${i}">День ${i + 1}${dateStr ? `<br><span>${dateStr}</span>` : ''}</th>`;
   }
 
+  // Traffic light for pace
+  function paceLight(ratio) {
+    if (ratio === 0) return { icon: '⚪', cls: 'pace-none', label: 'нет данных' };
+    if (ratio >= 0.9) return { icon: '🟢', cls: 'pace-ok',   label: `${Math.round(ratio * 100)}% темп` };
+    if (ratio >= 0.6) return { icon: '🟡', cls: 'pace-warn', label: `${Math.round(ratio * 100)}% темп` };
+    return               { icon: '🔴', cls: 'pace-bad',  label: `${Math.round(ratio * 100)}% темп` };
+  }
+
   // Build tbody rows
   let rows = '';
-  for (const ch of channels) {
+  for (const ch of sortedChannels) {
     const totalPct = ch.plan > 0 ? Math.round((ch.actual / ch.plan) * 100) : (ch.actual > 0 ? 100 : 0);
     const totalCls = pctClass(totalPct);
+
+    // Yesterday + delta
+    const yd     = ch.yesterday ?? 0;
+    const delta  = ch.yesterday_delta ?? 0;
+    const deltaStr = delta === 0 ? '—' : (delta > 0 ? `+${fmt(delta)}` : fmt(delta));
+    const deltaCls = delta > 0 ? 'delta-up' : delta < 0 ? 'delta-down' : '';
+
+    // Pace light
+    const pl = paceLight(ch.pace_ratio ?? 0);
 
     // Day cells
     let dayCells = '';
@@ -514,7 +591,11 @@ function renderChannelGrid(channels, comments, launchId, canEdit) {
         <td class="ch-grid-sticky ch-grid-resp">${ch.responsible || '—'}</td>
         <td class="ch-grid-sticky ch-grid-num">${fmt(ch.plan)}</td>
         <td class="ch-grid-sticky ch-grid-num ch-fact-cell" data-channel="${ch.name}">${fmt(ch.actual)}</td>
-        <td class="ch-grid-sticky ch-grid-num">${ch.forecast ? fmt(ch.forecast) : '—'}</td>
+        <td class="ch-grid-sticky ch-grid-num ch-yesterday">${yd > 0 ? fmt(yd) : '—'}</td>
+        <td class="ch-grid-sticky ch-grid-num ${deltaCls}">${deltaStr}</td>
+        <td class="ch-grid-sticky ch-grid-num">
+          <span class="pace-badge ${pl.cls}" title="${pl.label}">${pl.icon}</span>
+        </td>
         <td class="ch-grid-sticky ch-grid-num"><span class="ch-pct ${totalCls}">${totalPct}%</span></td>
         ${dayCells}
       </tr>`;
@@ -553,7 +634,9 @@ function renderChannelGrid(channels, comments, launchId, canEdit) {
           <th class="ch-grid-sticky ch-grid-resp">Ответственный</th>
           <th class="ch-grid-sticky ch-grid-num">План</th>
           <th class="ch-grid-sticky ch-grid-num">Факт</th>
-          <th class="ch-grid-sticky ch-grid-num">Прогноз</th>
+          <th class="ch-grid-sticky ch-grid-num">Вчера</th>
+          <th class="ch-grid-sticky ch-grid-num">Δ</th>
+          <th class="ch-grid-sticky ch-grid-num">Темп</th>
           <th class="ch-grid-sticky ch-grid-num">%</th>
           ${dayHeads}
         </tr>
@@ -1287,6 +1370,153 @@ document.getElementById('utmSaveBtn')?.addEventListener('click', async () => {
 });
 
 document.getElementById('utmRefreshBtn')?.addEventListener('click', () => loadUtmTab());
+
+// ── Compare Tab ────────────────────────────────────────────────────────────
+let compareChart = null;
+
+async function initCompareTab() {
+  // Populate reference selector
+  const sel = document.getElementById('compareRefSelect');
+  if (!sel) return;
+  const currentId = activeLaunchId || dashState?.overview?.launch_id;
+
+  if (sel.options.length <= 1) {
+    const launches = await fetch('/api/launches').then(r => r.json()).catch(() => []);
+    sel.innerHTML = '<option value="">Выбери запуск...</option>';
+    launches.forEach(l => {
+      if (l.id === currentId) return;  // skip current
+      const opt = document.createElement('option');
+      opt.value = l.id;
+      opt.textContent = `${l.name} (${fmtDate(l.reg_start)} — ${fmtDate(l.reg_end)}, ${fmt(l.total_actual)} рег.)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  document.getElementById('compareEmpty').style.display = '';
+  document.getElementById('compareResult').style.display = 'none';
+}
+
+document.getElementById('compareLoadBtn')?.addEventListener('click', async () => {
+  const refId = document.getElementById('compareRefSelect')?.value;
+  const currentId = activeLaunchId || dashState?.overview?.launch_id;
+  if (!refId || !currentId) return;
+
+  const btn = document.getElementById('compareLoadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Загрузка...';
+
+  try {
+    const data = await fetch(`/api/launches/${currentId}/compare/${refId}`).then(r => r.json());
+
+    document.getElementById('compareEmpty').style.display = 'none';
+    document.getElementById('compareResult').style.display = '';
+
+    // KPI cards
+    const mainTotal = data.main_cumulative.at(-1) || 0;
+    const refTotal  = data.ref_cumulative.at(-1)  || 0;
+    const diff = mainTotal - refTotal;
+    const diffSign = diff >= 0 ? '+' : '';
+    document.getElementById('compareKpiGrid').innerHTML = `
+      <div class="kpi-card kpi-card--today">
+        <div class="kpi-body">
+          <div class="kpi-label">${data.launch.name}</div>
+          <div class="kpi-value">${fmt(mainTotal)}</div>
+          <div class="kpi-sub">рег. итого</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-body">
+          <div class="kpi-label">${data.reference.name}</div>
+          <div class="kpi-value">${fmt(refTotal)}</div>
+          <div class="kpi-sub">рег. итого</div>
+        </div>
+      </div>
+      <div class="kpi-card ${diff >= 0 ? 'kpi-card--forecast' : 'kpi-card--pace'}">
+        <div class="kpi-body">
+          <div class="kpi-label">Разница</div>
+          <div class="kpi-value">${diffSign}${fmt(diff)}</div>
+          <div class="kpi-sub">${diff >= 0 ? 'опережаем' : 'отстаём'}</div>
+        </div>
+      </div>
+    `;
+
+    // Legend
+    document.getElementById('compareLegend').innerHTML = `
+      <span><span class="dot" style="background:#7C3AED"></span>${data.launch.name}</span>
+      <span><span class="dot" style="background:#EC4899"></span>${data.reference.name}</span>
+    `;
+
+    // Chart
+    const ctx = document.getElementById('compareChart').getContext('2d');
+    if (compareChart) compareChart.destroy();
+    compareChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.days.map(d => `День ${d}`),
+        datasets: [
+          {
+            label: data.launch.name,
+            data: data.main_cumulative,
+            borderColor: '#7C3AED', backgroundColor: 'rgba(124,58,237,0.07)',
+            fill: true, tension: 0.4, pointRadius: 4, borderWidth: 2.5,
+          },
+          {
+            label: data.reference.name,
+            data: data.ref_cumulative,
+            borderColor: '#EC4899', borderDash: [5, 4],
+            fill: false, tension: 0.4, pointRadius: 4, borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.raw)} рег.` } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#9CA3AF' } },
+          y: { grid: { color: '#F3F4F6' }, ticks: { color: '#9CA3AF', callback: v => fmt(v) } },
+        },
+      },
+    });
+
+    // Table
+    document.getElementById('compareTableHead').innerHTML = `
+      <tr>
+        <th>День</th>
+        <th class="num">${data.launch.name}</th>
+        <th class="num">${data.reference.name}</th>
+        <th class="num">Разница</th>
+        <th class="num">Накопл. сейчас</th>
+        <th class="num">Накопл. прошлый</th>
+      </tr>`;
+    document.getElementById('compareTableBody').innerHTML = data.days.map((d, i) => {
+      const m  = data.main_daily[i]      || 0;
+      const r  = data.ref_daily[i]       || 0;
+      const mc = data.main_cumulative[i] || 0;
+      const rc = data.ref_cumulative[i]  || 0;
+      const diff = m - r;
+      const diffCls = diff > 0 ? 'delta-up' : diff < 0 ? 'delta-down' : '';
+      return `
+        <tr>
+          <td>День ${d}</td>
+          <td class="num">${m > 0 ? fmt(m) : '—'}</td>
+          <td class="num">${r > 0 ? fmt(r) : '—'}</td>
+          <td class="num ${diffCls}">${m > 0 || r > 0 ? (diff >= 0 ? '+' : '') + fmt(diff) : '—'}</td>
+          <td class="num">${mc > 0 ? fmt(mc) : '—'}</td>
+          <td class="num">${rc > 0 ? fmt(rc) : '—'}</td>
+        </tr>`;
+    }).join('');
+
+  } catch (err) {
+    alert('Ошибка загрузки сравнения: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сравнить';
+  }
+});
 
 // ── Auto-refresh ───────────────────────────────────────────────────────────
 setInterval(() => loadDashboard(true), REFRESH_MS);

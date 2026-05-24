@@ -1480,3 +1480,76 @@ thead .ch-grid-sticky { z-index: 4; }
   .launches-grid { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 5-column KPI grid ─────────────────────────────────────────────────── */
+.kpi-grid-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+@media (max-width: 1100px) {
+  .kpi-grid-5 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 640px) {
+  .kpi-grid-5 { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── KPI card accent variants ──────────────────────────────────────────── */
+.kpi-card--yesterday { border-left: 3px solid var(--warning); }
+.kpi-card--forecast  { border-left: 3px solid var(--purple); }
+.kpi-card--pace      { border-left: 3px solid var(--success); }
+
+/* ── Delta colors ──────────────────────────────────────────────────────── */
+.delta-up   { color: var(--success) !important; font-weight: 600; }
+.delta-down { color: var(--danger)  !important; font-weight: 600; }
+
+/* ── Forecast scenarios row ────────────────────────────────────────────── */
+.forecast-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 4px;
+}
+@media (max-width: 768px) {
+  .forecast-row { grid-template-columns: repeat(2, 1fr); }
+}
+.forecast-scenario {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  border-top: 3px solid transparent;
+  transition: transform var(--transition);
+}
+.forecast-scenario:hover { transform: translateY(-2px); }
+.forecast-pess { border-top-color: var(--danger); }
+.forecast-real { border-top-color: var(--purple); box-shadow: 0 4px 20px rgba(124,58,237,0.18); }
+.forecast-opt  { border-top-color: var(--success); }
+.forecast-plan { border-top-color: var(--warning); }
+.fs-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-sub); margin-bottom: 4px; }
+.fs-value { font-size: 22px; font-weight: 800; color: var(--text); }
+.fs-pct   { font-size: 13px; font-weight: 600; color: var(--purple); margin-top: 2px; }
+.fs-hint  { font-size: 11px; color: var(--text-sub); margin-top: 4px; }
+
+/* ── Yesterday column in channels table ────────────────────────────────── */
+.ch-yesterday { color: var(--text); }
+
+/* ── Traffic light pace badge ──────────────────────────────────────────── */
+.pace-badge {
+  font-size: 16px;
+  cursor: default;
+  display: inline-block;
+}
+.pace-ok   { }
+.pace-warn { }
+.pace-bad  { }
+.pace-none { opacity: 0.4; }
+
+/* ── Compare tab ───────────────────────────────────────────────────────── */
+.compare-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}

@@ -307,6 +307,16 @@ def get_unmatched(launch_id: int):
     return get_unmatched_labels(launch_id)
 
 
+@app.get("/api/launches/{launch_id}/compare/{ref_launch_id}")
+def compare_launches(launch_id: int, ref_launch_id: int):
+    """Day-by-day comparison between two launches."""
+    from db import get_comparison_data
+    data = get_comparison_data(launch_id, ref_launch_id)
+    if not data:
+        raise HTTPException(404, "One or both launches not found")
+    return data
+
+
 @app.get("/api/launches/{launch_id}/utm-labels")
 def get_utm_labels(launch_id: int):
     from db import get_utm_stats, get_label_mappings
