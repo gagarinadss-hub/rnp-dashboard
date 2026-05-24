@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>РНП Запусков</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="app-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="sidebar-logo-icon">🚀</span>
+      <span class="sidebar-logo-text">РНП Запусков</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-tab="dashboard">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Дашборд</span>
+      </button>
+      <button class="nav-item" data-tab="channels">
+        <span class="nav-icon">📡</span>
+        <span class="nav-label">Каналы</span>
+      </button>
+      <button class="nav-item" data-tab="utm">
+        <span class="nav-icon">🏷️</span>
+        <span class="nav-label">UTM Метки</span>
+      </button>
+      <button class="nav-item" data-tab="launches">
+        <span class="nav-icon">📋</span>
+        <span class="nav-label">История</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-updated" id="updatedBadge">—</div>
+      <div class="sidebar-updated" id="importBadge" style="color:var(--success)"></div>
+      <div class="sidebar-role">
+        <div class="sidebar-role-label">РОЛЬ</div>
+        <select id="roleSelector" class="role-select">
+          <option>Оунер</option>
+          <option>Проджект запусков</option>
+          <option>Маркетолог</option>
+          <option>Аналитик</option>
+          <option>Ответственный за канал</option>
+        </select>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <select id="launchSelector" class="launch-select">
+          <option value="">Загрузка...</option>
+        </select>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-secondary" id="refreshBtn">↻ Обновить</button>
+        <button class="btn-secondary" id="reimportBtn" title="Переимпортировать регистрации из Google Таблицы">⬇ Импорт</button>
+        <button class="btn-primary" id="newLaunchBtn">+ Новый запуск</button>
+      </div>
+    </div>
+
+    <!-- DASHBOARD TAB -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="page-container">
+
+        <!-- Hero card -->
+        <div class="hero-card">
+          <div class="hero-launch-info">
+            <div class="hero-emoji">🚀</div>
+            <div>
+              <div class="hero-name" id="launch-name">—</div>
+              <div class="hero-dates" id="launch-dates">—</div>
+            </div>
+          </div>
+          <div class="hero-stats">
+            <div class="hero-stat">
+              <div class="hero-stat-value" id="hero-pct">—%</div>
+              <div class="hero-stat-label">выполнено</div>
+            </div>
+            <div class="hero-stat-divider"></div>
+            <div class="hero-stat">
+              <div class="hero-stat-value" id="kpi-days-left">—</div>
+              <div class="hero-stat-label">дней осталось</div>
+            </div>
+            <div class="hero-stat-divider"></div>
+            <div class="hero-stat">
+              <div class="hero-stat-value" id="launch-day-hero">—</div>
+              <div class="hero-stat-label">день запуска</div>
+            </div>
+          </div>
+          <div class="hero-progress-wrap">
+            <div class="hero-progress-bar">
+              <div class="hero-progress-fill" id="heroFill"></div>
+            </div>
+            <div class="hero-progress-labels">
+              <span id="hero-actual-label">—</span>
+              <span id="hero-forecast">Прогноз: —</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI row -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon">📋</div>
+            <div class="kpi-body">
+              <div class="kpi-label">Общий план</div>
+              <div class="kpi-value" id="hero-plan">—</div>
+              <div class="kpi-sub" id="launch-dates-kpi">—</div>
+            </div>
+          </div>
+          <div class="kpi-card kpi-card--today">
+            <div class="kpi-icon">✅</div>
+            <div class="kpi-body">
+              <div class="kpi-label">Факт сейчас</div>
+              <div class="kpi-value" id="hero-actual">—</div>
+              <div class="kpi-sub" id="kpi-fact-pct">—% от плана</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🎯</div>
+            <div class="kpi-body">
+              <div class="kpi-label">Прогноз итого</div>
+              <div class="kpi-value" id="kpi-forecast">—</div>
+              <div class="kpi-sub" id="kpi-forecast-pct">—% от плана</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🏆</div>
+            <div class="kpi-body">
+              <div class="kpi-label">Лучший канал</div>
+              <div class="kpi-value kpi-value--sm" id="kpi-top-ch">—</div>
+              <div class="kpi-sub" id="kpi-top-ch-sub">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts + Insight row -->
+        <div class="charts-row">
+          <div class="card chart-main-card">
+            <div class="card-head">
+              <h3>Динамика регистраций по дням</h3>
+              <div class="chart-legend">
+                <span><span class="dot" style="background:#7C3AED"></span>Факт</span>
+                <span><span class="dot" style="background:#C4B5FD"></span>План</span>
+                <span><span class="dot" style="background:#EC4899"></span>Прогноз</span>
+              </div>
+            </div>
+            <canvas id="mainChart" height="120"></canvas>
+          </div>
+          <div class="card chart-donut-card">
+            <div class="card-head"><h3>Топ каналов</h3></div>
+            <canvas id="donutChart"></canvas>
+            <div id="donutLegend" class="donut-legend"></div>
+          </div>
+        </div>
+
+        <!-- Сегодня + прогноз row -->
+        <div class="insight-row">
+          <div class="card insight-today">
+            <div class="insight-today-label">СЕГОДНЯ</div>
+            <div class="insight-today-value" id="kpi-today">—</div>
+            <div class="insight-today-sub" id="kpi-today-sub">из — план</div>
+          </div>
+          <div class="card channels-insight">
+            <div class="insight-title">🚀 Лидеры</div>
+            <div id="best-channels-list"></div>
+          </div>
+          <div class="card channels-insight">
+            <div class="insight-title">⚠️ Отстают</div>
+            <div id="lag-channels-list"></div>
+          </div>
+          <div class="card channels-insight">
+            <div class="insight-title">📈 Точность</div>
+            <div style="margin-top:12px">
+              <div class="kpi-value kpi-value--sm" id="kpi-confidence">—</div>
+              <div id="kpi-days-total" style="font-size:12px;color:var(--text-sub);margin-top:4px">из — дней</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick channels table -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Каналы</h3>
+            <input class="search-input" id="chSearch" placeholder="Поиск канала...">
+          </div>
+          <div class="table-wrap">
+            <table class="ch-table">
+              <thead>
+                <tr>
+                  <th>Канал</th>
+                  <th>Ответственный</th>
+                  <th class="num">План</th>
+                  <th class="num">Факт</th>
+                  <th class="num">%</th>
+                  <th>Прогресс</th>
+                </tr>
+              </thead>
+              <tbody id="channelsBody">
+                <tr><td colspan="6" class="loading-cell">Загрузка данных...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CHANNELS TAB -->
+    <div id="tab-channels" class="tab-content">
+      <div class="page-container">
+        <div class="channels-tab-header">
+          <div>
+            <h2>Поканальная аналитика</h2>
+            <p class="tab-subtitle" id="channels-launch-name">—</p>
+          </div>
+          <div class="day-picker" id="dayPicker">
+            <button class="day-btn active" data-day="all">Все дни</button>
+          </div>
+        </div>
+        <div id="channelDetails"></div>
+
+        <!-- Unmatched labels block -->
+        <div class="card" id="unmatchedCard" style="display:none">
+          <div class="card-head">
+            <h3>⚠️ Нераспределённые метки</h3>
+            <span class="unmatched-hint">Назначьте канал и нажмите «Сохранить» — при следующем импорте метки автоматически попадут в нужный канал</span>
+          </div>
+          <div class="table-wrap">
+            <table class="ch-table">
+              <thead>
+                <tr>
+                  <th>utm_source</th>
+                  <th>utm_medium</th>
+                  <th class="num">Кол-во</th>
+                  <th>Канал</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="unmatchedBody"></tbody>
+            </table>
+          </div>
+          <div class="unmatched-footer">
+            <button class="btn-primary" id="saveAllMappingsBtn">💾 Сохранить и переимпортировать</button>
+            <span id="saveMappingsStatus" style="font-size:13px;color:var(--text-sub);margin-left:12px"></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- UTM TAB -->
+    <div id="tab-utm" class="tab-content">
+      <div class="page-container">
+        <div class="utm-tab-header">
+          <div>
+            <h2>🏷️ UTM-метки</h2>
+            <p class="tab-subtitle">Все метки из регистраций — назначь канал и сохрани</p>
+          </div>
+          <div class="utm-tab-actions">
+            <input class="search-input" id="utmSearch" placeholder="Поиск по метке или каналу...">
+            <label class="utm-filter-check">
+              <input type="checkbox" id="utmShowUnmatched"> Только нераспределённые
+            </label>
+          </div>
+        </div>
+
+        <div class="utm-stats-row" id="utmStatsRow"></div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table class="ch-table utm-table">
+              <thead>
+                <tr>
+                  <th>utm_source</th>
+                  <th>utm_medium</th>
+                  <th>Платформа</th>
+                  <th class="num">Рег.</th>
+                  <th class="num">%</th>
+                  <th>Текущий канал</th>
+                  <th>Назначить канал</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="utmBody">
+                <tr><td colspan="7" class="loading-cell">Загрузка...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="unmatched-footer">
+            <button class="btn-primary" id="utmSaveBtn">💾 Сохранить и переимпортировать</button>
+            <button class="btn-secondary" id="utmRefreshBtn" style="margin-left:8px">↻ Обновить список</button>
+            <span id="utmSaveStatus" style="font-size:13px;color:var(--text-sub);margin-left:12px"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LAUNCHES TAB -->
+    <div id="tab-launches" class="tab-content">
+      <div class="page-container">
+        <div id="launchesListView">
+          <div class="launches-header"><h2>История запусков</h2></div>
+          <div id="launchesGrid" class="launches-grid"></div>
+        </div>
+        <div id="launchDetailView" class="hidden">
+          <button class="btn-back" id="backToLaunches">← Назад к списку</button>
+          <h2 id="detail-launch-name">—</h2>
+          <div class="kpi-grid" id="detail-kpi-grid" style="margin-bottom:20px"></div>
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-head"><h3>Динамика по дням</h3></div>
+            <canvas id="detailChart" height="90"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Разбивка по каналам</h3></div>
+            <div class="table-wrap">
+              <table class="ch-table">
+                <thead>
+                  <tr><th>Канал</th><th>Ответственный</th><th class="num">План</th><th class="num">Итого</th><th class="num">%</th><th>Дни</th></tr>
+                </thead>
+                <tbody id="detailChannelsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- NEW LAUNCH MODAL -->
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Новый запуск</h3>
+        <button class="modal-close" id="closeModal">×</button>
+      </div>
+      <form id="newLaunchForm">
+        <div class="form-section">
+          <label class="form-label">Название запуска
+            <input type="text" name="name" required placeholder="Вайбкодинг 2 сезон">
+          </label>
+        </div>
+        <div class="form-section">
+          <p class="form-section-title">Период регистраций</p>
+          <div class="form-row">
+            <label class="form-label">Старт<input type="date" name="reg_start" required></label>
+            <label class="form-label">Конец<input type="date" name="reg_end" required></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <p class="form-section-title">Мероприятие</p>
+          <div class="form-row">
+            <label class="form-label">Начало<input type="date" name="event_date"></label>
+            <label class="form-label">Конец (если несколько дней)<input type="date" name="event_end_date"></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <label class="form-label">Общий план регистраций
+            <input type="number" name="total_plan" placeholder="4710" min="0">
+          </label>
+        </div>
+        <div class="form-section channels-picker">
+          <p class="channels-picker-title">Каналы и планы</p>
+          <div class="channels-picker-head">
+            <span class="ch-col-name">Канал</span>
+            <span class="ch-col-plan">План</span>
+            <span class="ch-col-resp">Ответственный</span>
+          </div>
+          <div id="channelsList"></div>
+          <div class="add-channel-row">
+            <input type="text" id="newChannelName" placeholder="Название нового канала..." class="add-channel-input">
+            <button type="button" id="addChannelBtn" class="btn-secondary btn-sm">+ Добавить</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="cancelModal">Отмена</button>
+          <button type="submit" class="btn-primary">Создать запуск</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

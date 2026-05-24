@@ -1,0 +1,15 @@
+[Unit]
+Description=РНП Запусков Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=rnp
+WorkingDirectory=/opt/rnp
+ExecStart=/opt/rnp/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/rnp/.env
+
+[Install]
+WantedBy=multi-user.target
