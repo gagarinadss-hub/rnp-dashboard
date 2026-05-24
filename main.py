@@ -24,9 +24,6 @@ if _creds_env and not (BASE_DIR / "credentials.json").exists():
 import sys
 sys.path.insert(0, str(BASE_DIR))
 
-from sheets_client import SheetsClient
-from data_processor import DataProcessor
-
 CACHE_TTL = 300  # seconds
 _cache: dict = {}
 _last_updated: float = 0
@@ -53,6 +50,8 @@ def _fetch_data() -> dict:
     if DEMO_MODE:
         from demo_data import get_demo_data
         return get_demo_data()
+    from sheets_client import SheetsClient
+    from data_processor import DataProcessor
     client = SheetsClient()
     registrations  = client.get_registrations()
     rnp_raw        = client.get_rnp_raw()
