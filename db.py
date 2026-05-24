@@ -3,7 +3,11 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "launches.db"
+# DATA_DIR: на Railway монтируем volume в /data, локально — рядом с кодом
+import os as _os
+_data_dir = Path(_os.getenv("DATA_DIR", str(Path(__file__).parent)))
+_data_dir.mkdir(parents=True, exist_ok=True)
+DB_PATH = _data_dir / "launches.db"
 
 
 def init_db():

@@ -15,6 +15,12 @@ log = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env")
 
+# ── Railway / cloud: восстанавливаем credentials.json из env-переменной ──────
+_creds_env = os.getenv("GOOGLE_CREDENTIALS")
+if _creds_env and not (BASE_DIR / "credentials.json").exists():
+    (BASE_DIR / "credentials.json").write_text(_creds_env, encoding="utf-8")
+    log.info("[startup] credentials.json восстановлен из GOOGLE_CREDENTIALS")
+
 import sys
 sys.path.insert(0, str(BASE_DIR))
 
