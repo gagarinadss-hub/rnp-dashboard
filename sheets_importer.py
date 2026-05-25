@@ -58,8 +58,12 @@ def _load_db_mappings() -> dict:
     Platform='' means "any platform" (fallback).
     """
     try:
-        db_path = str(BASE_DIR / 'launches.db')
-        con = sqlite3.connect(db_path)
+        from db import DB_PATH as _db_path_obj
+        _db_path = str(_db_path_obj)
+    except Exception:
+        _db_path = str(BASE_DIR / 'launches.db')
+    try:
+        con = sqlite3.connect(_db_path)
         con.row_factory = sqlite3.Row
         rows = con.execute("SELECT utm_source, utm_medium, platform, channel_name FROM label_mappings").fetchall()
         con.close()
@@ -154,6 +158,7 @@ def run_import(launch_id: int) -> dict:
     """
     global _last_import, _last_total
 
+    # credentials.json: either next to code or restored from env at startup
     creds_path = str(BASE_DIR / 'credentials.json')
     try:
         gc = gspread.service_account(filename=creds_path)
@@ -161,8 +166,12 @@ def run_import(launch_id: int) -> dict:
         log.error(f'[importer] не удалось авторизоваться: {e}')
         return {'error': str(e)}
 
-    # Получаем reg_start из БД
-    db_path = str(BASE_DIR / 'launches.db')
+    # Use the same DB_PATH as db.py (respects DATA_DIR env var on Railway)
+    try:
+        from db import DB_PATH as _db_path_obj
+        db_path = str(_db_path_obj)
+    except Exception:
+        db_path = str(BASE_DIR / 'launches.db')
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     row = con.execute(
