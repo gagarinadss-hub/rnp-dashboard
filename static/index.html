@@ -113,19 +113,11 @@
           </div>
         </div>
 
-        <!-- Alerts feed -->
+        <!-- Compact alerts -->
         <div class="alerts-feed" id="alertsFeed"></div>
 
-        <!-- KPI row -->
-        <div class="kpi-grid kpi-grid-5">
-          <div class="kpi-card">
-            <div class="kpi-icon">📋</div>
-            <div class="kpi-body">
-              <div class="kpi-label">Общий план</div>
-              <div class="kpi-value" id="hero-plan">—</div>
-              <div class="kpi-sub" id="launch-dates-kpi">—</div>
-            </div>
-          </div>
+        <!-- KPI row (4 essentials) -->
+        <div class="kpi-grid kpi-grid-4">
           <div class="kpi-card kpi-card--today">
             <div class="kpi-icon">✅</div>
             <div class="kpi-body">
@@ -142,14 +134,6 @@
               <div class="kpi-sub" id="kpi-yesterday-delta">—</div>
             </div>
           </div>
-          <div class="kpi-card kpi-card--forecast">
-            <div class="kpi-icon">🎯</div>
-            <div class="kpi-body">
-              <div class="kpi-label">Прогноз финала</div>
-              <div class="kpi-value" id="kpi-forecast">—</div>
-              <div class="kpi-sub" id="kpi-forecast-pct">—</div>
-            </div>
-          </div>
           <div class="kpi-card kpi-card--pace">
             <div class="kpi-icon">⚡</div>
             <div class="kpi-body">
@@ -158,85 +142,48 @@
               <div class="kpi-sub" id="kpi-pace-sub">чтобы выйти на план</div>
             </div>
           </div>
+          <div class="kpi-card kpi-card--forecast">
+            <div class="kpi-icon">🎯</div>
+            <div class="kpi-body">
+              <div class="kpi-label">Прогноз финала</div>
+              <div class="kpi-value" id="kpi-forecast">—</div>
+              <div class="kpi-sub" id="kpi-forecast-pct">—</div>
+            </div>
+          </div>
         </div>
 
-        <!-- Forecast scenarios row -->
-        <div class="forecast-row" id="forecastRow"></div>
-
-        <!-- Charts + Insight row -->
-        <div class="charts-row">
-          <div class="card chart-main-card">
-            <div class="card-head">
-              <h3>Динамика регистраций по дням</h3>
-              <div class="chart-head-right">
-                <label class="curve-select-wrap" title="Форма плана по дням: равномерно или по кривой реального прошлого запуска">
-                  <span>База плана:</span>
-                  <select id="planCurveSelect" class="curve-select">
-                    <option value="">равномерно</option>
-                  </select>
-                </label>
-                <div class="chart-legend">
-                  <span><span class="dot" style="background:#7C3AED"></span>Факт</span>
-                  <span><span class="dot" style="background:#C4B5FD"></span>План</span>
-                  <span><span class="dot" style="background:#EC4899"></span>Прогноз</span>
-                </div>
+        <!-- Main chart (full width) -->
+        <div class="card chart-main-card">
+          <div class="card-head">
+            <h3>Динамика регистраций по дням</h3>
+            <div class="chart-head-right">
+              <label class="curve-select-wrap" title="Форма плана по дням: равномерно или по кривой реального прошлого запуска">
+                <span>База плана:</span>
+                <select id="planCurveSelect" class="curve-select">
+                  <option value="">равномерно</option>
+                </select>
+              </label>
+              <div class="chart-legend">
+                <span><span class="dot" style="background:#7C3AED"></span>Факт</span>
+                <span><span class="dot" style="background:#A78BFA"></span>План</span>
+                <span><span class="dot" style="background:#EC4899"></span>Прогноз</span>
               </div>
             </div>
-            <canvas id="mainChart" height="120"></canvas>
           </div>
-          <div class="card chart-donut-card">
-            <div class="card-head"><h3>Топ каналов</h3></div>
-            <canvas id="donutChart"></canvas>
-            <div id="donutLegend" class="donut-legend"></div>
-          </div>
+          <canvas id="mainChart" height="110"></canvas>
         </div>
 
-        <!-- Сегодня + прогноз row -->
-        <div class="insight-row">
-          <div class="card insight-today">
-            <div class="insight-today-label">СЕГОДНЯ</div>
-            <div class="insight-today-value" id="kpi-today">—</div>
-            <div class="insight-today-sub" id="kpi-today-sub">из — план</div>
-          </div>
-          <div class="card channels-insight">
-            <div class="insight-title">🚀 Лидеры</div>
-            <div id="best-channels-list"></div>
-          </div>
-          <div class="card channels-insight">
-            <div class="insight-title">⚠️ Отстают</div>
-            <div id="lag-channels-list"></div>
-          </div>
-          <div class="card channels-insight">
-            <div class="insight-title">📈 Точность</div>
-            <div style="margin-top:12px">
-              <div class="kpi-value kpi-value--sm" id="kpi-confidence">—</div>
-              <div id="kpi-days-total" style="font-size:12px;color:var(--text-sub);margin-top:4px">из — дней</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Quick channels table -->
+        <!-- Top channels -->
         <div class="card">
           <div class="card-head">
             <h3>Каналы</h3>
-            <input class="search-input" id="chSearch" placeholder="Поиск канала...">
+            <div class="card-head-right">
+              <input class="search-input" id="chSearch" placeholder="Поиск канала...">
+              <button class="link-btn" id="goChannelsTab">Все каналы →</button>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table class="ch-table">
-              <thead>
-                <tr>
-                  <th>Канал</th>
-                  <th>Ответственный</th>
-                  <th class="num">План</th>
-                  <th class="num">Факт</th>
-                  <th class="num">%</th>
-                  <th>Прогресс</th>
-                </tr>
-              </thead>
-              <tbody id="channelsBody">
-                <tr><td colspan="6" class="loading-cell">Загрузка данных...</td></tr>
-              </tbody>
-            </table>
+          <div id="dashTopChannels" class="top-ch-list">
+            <div class="loading-cell">Загрузка данных...</div>
           </div>
         </div>
 
@@ -248,14 +195,20 @@
       <div class="page-container">
         <div class="channels-tab-header">
           <div>
-            <h2>Поканальная аналитика</h2>
+            <h2>Каналы</h2>
             <p class="tab-subtitle" id="channels-launch-name">—</p>
           </div>
-          <div class="day-picker" id="dayPicker">
-            <button class="day-btn active" data-day="all">Все дни</button>
+          <div class="channels-toolbar">
+            <input class="search-input" id="chListSearch" placeholder="Поиск канала...">
+            <select id="chListSort" class="curve-select">
+              <option value="behind">Сначала отстающие</option>
+              <option value="fact">По факту ↓</option>
+              <option value="pct">По % ↓</option>
+              <option value="name">По названию</option>
+            </select>
           </div>
         </div>
-        <div id="channelDetails"></div>
+        <div id="channelDetails" class="ch-list"></div>
 
         <!-- Unmatched labels block -->
         <div class="card" id="unmatchedCard" style="display:none">

@@ -4,7 +4,6 @@
 let dashState     = null;   // current dashboard payload
 let activeLaunchId = null;  // null → GSheets live, number → DB launch
 let allLaunches   = [];     // cached list for the switcher
-let selectedDay   = 'all';  // Channels tab day picker
 const REFRESH_MS  = 5 * 60 * 1000;
 let charts        = {};
 
@@ -93,7 +92,7 @@ async function loadLaunchSelector() {
 document.getElementById('launchSelector').addEventListener('change', async e => {
   const val = e.target.value;
   activeLaunchId = val ? parseInt(val, 10) : null;
-  selectedDay    = 'all';
+  chListOpen.clear();
   await loadDashboard();
   // Refresh channels tab if open
   if (document.querySelector('.nav-item[data-tab="channels"]')?.classList.contains('active')) {
@@ -152,16 +151,12 @@ function renderDashboard() {
   document.getElementById('hero-actual-label').textContent = `${fmt(o.total_actual)} факт`;
   document.getElementById('hero-forecast').textContent = `Прогноз: ${fmt(f.projected_total)} (${f.projected_pct}%)`;
 
-  // ── KPI cards ──────────────────────────────────────────────────────────
-  // Карточка 1: Общий план
-  document.getElementById('hero-plan').textContent       = fmt(o.total_plan);
-  document.getElementById('launch-dates-kpi').textContent = `${fmtDate(o.start_date)} — ${fmtDate(o.end_date)}`;
-
-  // Карточка 2: Факт сейчас
+  // ── KPI cards (4 essentials) ─────────────────────────────────────────────
+  // Факт сейчас
   document.getElementById('hero-actual').textContent  = fmt(o.total_actual);
   document.getElementById('kpi-fact-pct').textContent = `${o.completion_pct}% от плана`;
 
-  // Карточка 3: Вчера
+  // Вчера
   const yd = o.yesterday_actual ?? 0;
   const ydDelta = o.yesterday_delta ?? 0;
   document.getElementById('kpi-yesterday').textContent = fmt(yd);
@@ -175,81 +170,19 @@ function renderDashboard() {
     deltaEl.className = 'kpi-sub';
   }
 
-  // Карточка 4: Прогноз финала
+  // Прогноз финала
   document.getElementById('kpi-forecast').textContent = fmt(f.projected_total);
   const fPct = f.projected_pct;
   const fSub = document.getElementById('kpi-forecast-pct');
   fSub.textContent = `${fPct}% от плана`;
   fSub.className = `kpi-sub ${fPct >= 90 ? 'delta-up' : fPct >= 70 ? '' : 'delta-down'}`;
 
-  // Карточка 5: Нужно в день
+  // Нужно в день
   const pace = o.pace_needed ?? 0;
   document.getElementById('kpi-pace').textContent = pace > 0 ? fmt(pace) : '—';
   document.getElementById('kpi-pace-sub').textContent = pace > 0
-    ? `в день × ${o.days_remaining} дн. = ${fmt(pace * o.days_remaining)}`
-    : 'план выполнен или нет данных';
-
-  // ── Forecast scenarios ─────────────────────────────────────────────────
-  const forecastRow = document.getElementById('forecastRow');
-  if (forecastRow && f.pessimistic) {
-    const pPct = f.pessimistic_pct ?? 0;
-    const oPct = f.optimistic_pct  ?? 0;
-    forecastRow.innerHTML = `
-      <div class="forecast-scenario forecast-pess">
-        <div class="fs-label">Пессимист</div>
-        <div class="fs-value">${fmt(f.pessimistic)}</div>
-        <div class="fs-pct">${pPct}%</div>
-        <div class="fs-hint">если темп упадёт</div>
-      </div>
-      <div class="forecast-scenario forecast-real">
-        <div class="fs-label">Реалист ★</div>
-        <div class="fs-value">${fmt(f.realistic)}</div>
-        <div class="fs-pct">${f.projected_pct}%</div>
-        <div class="fs-hint">средний темп</div>
-      </div>
-      <div class="forecast-scenario forecast-opt">
-        <div class="fs-label">Оптимист</div>
-        <div class="fs-value">${fmt(f.optimistic)}</div>
-        <div class="fs-pct">${oPct}%</div>
-        <div class="fs-hint">лучшие 3 дня</div>
-      </div>
-      <div class="forecast-scenario forecast-plan">
-        <div class="fs-label">План</div>
-        <div class="fs-value">${fmt(o.total_plan)}</div>
-        <div class="fs-pct">100%</div>
-        <div class="fs-hint">цель</div>
-      </div>
-    `;
-  }
-
-  // ── Insight row ────────────────────────────────────────────────────────
-  document.getElementById('kpi-today').textContent     = fmt(o.today_actual);
-  document.getElementById('kpi-today-sub').textContent = `из ${fmt(o.today_plan)} план`;
-
-  const confEl = document.getElementById('kpi-confidence');
-  confEl.textContent = f.confidence;
-  const confClass = { 'высокая': 'high', 'средняя': 'medium', 'низкая': 'low' };
-  confEl.className = `kpi-value kpi-value--sm badge ${confClass[f.confidence] || ''}`;
-
-  document.getElementById('kpi-days-total').textContent = `из ${o.days_total} дней`;
-
-  // Best / lagging channels
-  const best = dashState.best_channels || [];
-  const lag  = dashState.lag_channels  || [];
-  document.getElementById('best-channels-list').innerHTML = best.length
-    ? best.map(c => `
-        <div class="insight-item">
-          <span class="insight-ch">${c.name}</span>
-          <span class="ch-pct pct-great">${c.pct}%</span>
-        </div>`).join('')
-    : '<div class="insight-empty">Нет данных</div>';
-  document.getElementById('lag-channels-list').innerHTML = lag.length
-    ? lag.map(c => `
-        <div class="insight-item">
-          <span class="insight-ch">${c.name}</span>
-          <span class="ch-pct pct-danger">${c.pct}%</span>
-        </div>`).join('')
-    : '<div class="insight-empty">Нет данных</div>';
+    ? `× ${o.days_remaining} дн. до плана`
+    : 'план выполнен';
 
   // ── Alerts feed ──────────────────────────────────────────────────────────
   renderAlerts(dashState.alerts || []);
@@ -257,12 +190,45 @@ function renderDashboard() {
   // ── Plan-curve selector ──────────────────────────────────────────────────
   renderPlanCurveSelect(o);
 
-  // ── Charts ─────────────────────────────────────────────────────────────
+  // ── Main chart ───────────────────────────────────────────────────────────
   renderMainChart(d, f, o);
-  renderDonutChart(dashState.channels || []);
 
-  // ── Channels table (dashboard quick view) ──────────────────────────────
-  renderChannelTable(document.getElementById('chSearch').value);
+  // ── Top channels ─────────────────────────────────────────────────────────
+  renderTopChannels(document.getElementById('chSearch').value);
+}
+
+// ── Top channels (dashboard compact list) ─────────────────────────────────────
+function renderTopChannels(filter) {
+  const wrap = document.getElementById('dashTopChannels');
+  if (!wrap || !dashState) return;
+  let chs = (dashState.channels || []).slice();
+  const q = (filter || '').trim().toLowerCase();
+  if (q) chs = chs.filter(c => (c.name || '').toLowerCase().includes(q));
+  // sort by fact desc
+  chs.sort((a, b) => (b.actual || 0) - (a.actual || 0));
+  if (!q) chs = chs.slice(0, 8);
+  if (!chs.length) {
+    wrap.innerHTML = '<div class="insight-empty">Нет каналов</div>';
+    return;
+  }
+  const maxFact = Math.max(...chs.map(c => c.actual || 0), 1);
+  wrap.innerHTML = chs.map(c => {
+    const pct = c.pct ?? 0;
+    const pctCls = pct >= 100 ? 'pct-great' : pct >= 70 ? 'pct-ok' : pct >= 40 ? 'pct-warn' : 'pct-danger';
+    const barW = clamp((c.actual || 0) / maxFact * 100, 2, 100);
+    const nameJson = JSON.stringify(c.name).replace(/"/g, '&quot;');
+    return `
+      <div class="top-ch-row" onclick="openChannelHistory(${nameJson})">
+        <div class="top-ch-main">
+          <span class="top-ch-name">${escapeHtml(c.name)}</span>
+          <span class="top-ch-fact">${fmt(c.actual || 0)} <span class="top-ch-plan">/ ${fmt(c.plan || 0)}</span></span>
+        </div>
+        <div class="top-ch-barwrap">
+          <div class="top-ch-bar"><div class="top-ch-fill ${pctCls}" style="width:${barW}%"></div></div>
+          <span class="top-ch-pct ${pctCls}">${pct}%</span>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // ── Alerts feed ──────────────────────────────────────────────────────────────
@@ -404,96 +370,31 @@ function renderMainChart(d, f, o) {
   });
 }
 
-// ── Donut Chart ────────────────────────────────────────────────────────────
-function renderDonutChart(channels) {
-  const top = channels
-    .filter(c => c.actual > 0)
-    .sort((a, b) => b.actual - a.actual)
-    .slice(0, 8);
-
-  const canvasEl = document.getElementById('donutChart');
-  const legendEl = document.getElementById('donutLegend');
-  if (!canvasEl) return;
-
-  if (!top.length) {
-    if (legendEl) legendEl.innerHTML = '<div class="insight-empty">Нет данных</div>';
-    return;
-  }
-
-  const ctx = canvasEl.getContext('2d');
-  if (charts.donut) charts.donut.destroy();
-
-  charts.donut = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: top.map(c => c.name),
-      datasets: [{
-        data: top.map(c => c.actual),
-        backgroundColor: PALETTE.slice(0, top.length),
-        borderWidth: 2,
-        borderColor: '#fff',
-        hoverOffset: 6,
-      }],
-    },
-    options: {
-      responsive: true,
-      cutout: '62%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: c => ` ${c.label}: ${fmt(c.raw)} рег.`,
-          },
-        },
-      },
-    },
-  });
-
-  if (legendEl) {
-    legendEl.innerHTML = top.map((c, i) => `
-      <div class="donut-legend-item">
-        <span class="donut-legend-dot" style="background:${PALETTE[i]}"></span>
-        <span class="donut-legend-name">${c.name}</span>
-        <span class="donut-legend-val">${fmt(c.actual)}</span>
-      </div>`).join('');
-  }
-}
-
-// ── Channel Table (Dashboard) ──────────────────────────────────────────────
-function renderChannelTable(filter = '') {
-  const q        = filter.toLowerCase().trim();
-  const channels = (dashState?.channels || []).filter(c => !q || c.name.toLowerCase().includes(q));
-  const tbody    = document.getElementById('channelsBody');
-  if (!channels.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="loading-cell">Каналы не найдены</td></tr>';
-    return;
-  }
-  tbody.innerHTML = channels.map(c => {
-    const fillW = clamp(c.pct, 0, 100);
-    const cls   = pctClass(c.pct);
-    return `
-      <tr>
-        <td><span class="ch-name ch-name-link" onclick="openChannelHistory(${JSON.stringify(c.name).replace(/"/g, '&quot;')})">${c.name}</span></td>
-        <td><span class="ch-resp">${c.responsible || '—'}</span></td>
-        <td class="num">${fmt(c.plan)}</td>
-        <td class="num">${fmt(c.actual)}</td>
-        <td><span class="ch-pct ${cls}">${c.pct}%</span></td>
-        <td>
-          <div class="progress-mini">
-            <div class="progress-mini-bar">
-              <div class="progress-mini-fill" style="width:${fillW}%"></div>
-            </div>
-          </div>
-        </td>
-      </tr>`;
-  }).join('');
-}
-
 document.getElementById('chSearch').addEventListener('input', e => {
-  if (dashState) renderChannelTable(e.target.value);
+  if (dashState) renderTopChannels(e.target.value);
 });
 
-// ── Channels Tab ───────────────────────────────────────────────────────────
+const goChannelsTabBtn = document.getElementById('goChannelsTab');
+if (goChannelsTabBtn) {
+  goChannelsTabBtn.addEventListener('click', () => {
+    const tabBtn = document.querySelector('.nav-item[data-tab="channels"]')
+      || document.querySelector('[data-tab="channels"]');
+    if (tabBtn) tabBtn.click();
+  });
+}
+
+// Channels-tab list controls
+document.getElementById('chListSearch')?.addEventListener('input', () => {
+  if (chListState.channels.length) renderChannelsList();
+});
+document.getElementById('chListSort')?.addEventListener('change', () => {
+  if (chListState.channels.length) renderChannelsList();
+});
+
+// ── Channels Tab (accordion list) ──────────────────────────────────────────
+let chListState = { channels: [], comments: {}, launchId: null, canEdit: false, dates: [], daysTotal: 0 };
+let chListOpen  = new Set();   // channel names currently expanded (persists across re-render)
+
 async function renderChannelsTab() {
   const data = dashState;
   if (!data) return;
@@ -502,272 +403,276 @@ async function renderChannelsTab() {
   const daysTotal = data.overview?.days_total || 7;
   const launchId  = data.overview?.launch_id || activeLaunchId;
   const canEdit   = isDbSource();
+  const dates     = data.daily?.dates || [];
 
-  // Build day picker (highlights a column, doesn't hide others)
-  const picker = document.getElementById('dayPicker');
-  picker.innerHTML = '';
-  const allBtn = document.createElement('button');
-  allBtn.className = 'day-btn' + (selectedDay === 'all' ? ' active' : '');
-  allBtn.dataset.day = 'all';
-  allBtn.textContent = 'Все дни';
-  picker.appendChild(allBtn);
-
-  for (let i = 0; i < daysTotal; i++) {
-    const btn = document.createElement('button');
-    btn.className   = 'day-btn' + (selectedDay === String(i) ? ' active' : '');
-    btn.dataset.day = String(i);
-    const dayDate   = data.daily?.dates?.[i];
-    btn.textContent = dayDate
-      ? `День ${i + 1} (${fmtDate(dayDate)})`
-      : `День ${i + 1}`;
-    picker.appendChild(btn);
-  }
-
-  picker.querySelectorAll('.day-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      picker.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectedDay = btn.dataset.day;
-      // Highlight the column and scroll it into view
-      const container = document.getElementById('channelDetails');
-      container.querySelectorAll('.ch-grid-day-head').forEach(th => {
-        th.classList.remove('day-highlight');
-      });
-      if (selectedDay !== 'all') {
-        const dayIdx = parseInt(selectedDay, 10);
-        const th = container.querySelector(`.ch-grid-day-head[data-day="${dayIdx}"]`);
-        if (th) {
-          th.classList.add('day-highlight');
-          th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-        }
-      }
-    });
-  });
-
-  // Load comments async, then render
-  let comments = [];
+  // Build per-channel per-day comments lookup
+  const commentsMap = {};
   if (launchId) {
     try {
-      comments = await fetch(`/api/launches/${launchId}/comments`).then(r => r.ok ? r.json() : []);
-    } catch { comments = []; }
+      const comments = await fetch(`/api/launches/${launchId}/comments`).then(r => r.ok ? r.json() : []);
+      for (const c of comments) {
+        if (!commentsMap[c.channel_name]) commentsMap[c.channel_name] = {};
+        commentsMap[c.channel_name][c.day_num] = c.comment || '';
+      }
+    } catch { /* no comments */ }
   }
 
-  renderChannelGrid(channels, comments, launchId, canEdit);
-
-  // Load unmatched labels section
+  chListState = { channels, comments: commentsMap, launchId, canEdit, dates, daysTotal };
+  renderChannelsList();
   loadUnmatchedLabels();
 }
 
-function renderChannelGrid(channels, comments, launchId, canEdit) {
-  const container = document.getElementById('channelDetails');
-  container.innerHTML = '';
+function sortChannelList(channels, mode) {
+  const arr = [...channels];
+  const pctOf = c => c.plan > 0 ? c.actual / c.plan : (c.actual > 0 ? 99 : -1);
+  if (mode === 'fact')      arr.sort((a, b) => (b.actual || 0) - (a.actual || 0));
+  else if (mode === 'pct')  arr.sort((a, b) => (b.pct || 0) - (a.pct || 0));
+  else if (mode === 'name') arr.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+  else                      arr.sort((a, b) => pctOf(a) - pctOf(b)); // behind plan first
+  return arr;
+}
 
+function renderChannelsList() {
+  const container = document.getElementById('channelDetails');
+  if (!container) return;
+  const { channels } = chListState;
   if (!channels.length) {
     container.innerHTML = '<p style="color:var(--text-sub)">Нет данных по каналам</p>';
     return;
   }
-
-  const data      = dashState;
-  const daysTotal = data?.overview?.days_total || 0;
-  const dates     = data?.daily?.dates || [];
-
-  // Build comments lookup: commentsMap[channelName][dayNum] = text
-  const commentsMap = {};
-  for (const c of (comments || [])) {
-    if (!commentsMap[c.channel_name]) commentsMap[c.channel_name] = {};
-    commentsMap[c.channel_name][c.day_num] = c.comment || '';
+  const q    = (document.getElementById('chListSearch')?.value || '').trim().toLowerCase();
+  const mode = document.getElementById('chListSort')?.value || 'behind';
+  let list = channels.filter(c => !q || (c.name || '').toLowerCase().includes(q));
+  list = sortChannelList(list, mode);
+  if (!list.length) {
+    container.innerHTML = '<p style="color:var(--text-sub)">Каналы не найдены</p>';
+    return;
   }
 
-  // Helper: classify achievement %
-  function dciClass(pct, fact) {
-    if (fact === 0) return 'dci-zero';
-    if (pct >= 100) return 'dci-great';
-    if (pct >= 80)  return 'dci-good';
-    if (pct >= 50)  return 'dci-warn';
-    return 'dci-danger';
-  }
+  const maxFact = Math.max(...channels.map(c => c.actual || 0), 1);
+  container.innerHTML = list.map(c => channelItemHtml(c, maxFact)).join('');
 
-  // Number of sticky columns
-  const STICKY_COLS = 8;  // name, resp, plan, fact, yesterday, delta, pace, pct
-  const totalCols   = STICKY_COLS + daysTotal;
-
-  // Sort channels: behind plan first (ascending pct), then by actual desc
-  const sortedChannels = [...channels].sort((a, b) => {
-    const aPct = a.plan > 0 ? a.actual / a.plan : (a.actual > 0 ? 99 : -1);
-    const bPct = b.plan > 0 ? b.actual / b.plan : (b.actual > 0 ? 99 : -1);
-    return aPct - bPct;
+  container.querySelectorAll('.ch-item-head').forEach(head => {
+    head.addEventListener('click', () => toggleChannelItem(head.closest('.ch-item')));
   });
-
-  // Build thead
-  let dayHeads = '';
-  for (let i = 0; i < daysTotal; i++) {
-    const dateStr  = dates[i] ? fmtDate(dates[i]) : '';
-    const hlClass  = (selectedDay !== 'all' && parseInt(selectedDay, 10) === i) ? ' day-highlight' : '';
-    dayHeads += `<th class="ch-grid-day-head${hlClass}" data-day="${i}">День ${i + 1}${dateStr ? `<br><span>${dateStr}</span>` : ''}</th>`;
-  }
-
-  // Traffic light for pace
-  function paceLight(ratio) {
-    if (ratio === 0) return { icon: '⚪', cls: 'pace-none', label: 'нет данных' };
-    if (ratio >= 0.9) return { icon: '🟢', cls: 'pace-ok',   label: `${Math.round(ratio * 100)}% темп` };
-    if (ratio >= 0.6) return { icon: '🟡', cls: 'pace-warn', label: `${Math.round(ratio * 100)}% темп` };
-    return               { icon: '🔴', cls: 'pace-bad',  label: `${Math.round(ratio * 100)}% темп` };
-  }
-
-  // Build tbody rows
-  let rows = '';
-  for (const ch of sortedChannels) {
-    const totalPct = ch.plan > 0 ? Math.round((ch.actual / ch.plan) * 100) : (ch.actual > 0 ? 100 : 0);
-    const totalCls = pctClass(totalPct);
-
-    // Yesterday + delta
-    const yd     = ch.yesterday ?? 0;
-    const delta  = ch.yesterday_delta ?? 0;
-    const deltaStr = delta === 0 ? '—' : (delta > 0 ? `+${fmt(delta)}` : fmt(delta));
-    const deltaCls = delta > 0 ? 'delta-up' : delta < 0 ? 'delta-down' : '';
-
-    // Pace light
-    const pl = paceLight(ch.pace_ratio ?? 0);
-
-    // Day cells
-    let dayCells = '';
-    for (let i = 0; i < daysTotal; i++) {
-      const fact = ch.daily_actual?.[i] ?? 0;
-      const plan = ch.daily_plan?.[i]   ?? 0;
-      const pct  = plan > 0 ? Math.round((fact / plan) * 100) : (fact > 0 ? 100 : 0);
-      const cls  = dciClass(pct, fact);
-      const editableClass = canEdit ? ' editable-fact' : '';
-      dayCells += `
-        <td class="ch-grid-day-cell" data-day="${i}" data-channel="${ch.name}">
-          <div class="day-cell-inner ${cls}">
-            <div class="dci-plan">пл ${fmt(plan)}</div>
-            <div class="dci-fact${editableClass}"
-                 data-value="${fact}"
-                 data-launch="${launchId}"
-                 data-channel="${ch.name}"
-                 data-day="${i + 1}"
-                 data-plan-el="pct-${ch.name}-${i}">${fmt(fact)}</div>
-            <div class="dci-pct" id="pct-${ch.name}-${i}">${plan > 0 ? pct + '%' : '—'}</div>
-          </div>
-        </td>`;
-    }
-
-    // Check if channel has any comment
-    const chComments = commentsMap[ch.name] || {};
-    const hasAnyComment = Object.values(chComments).some(t => t && t.trim());
-
-    rows += `
-      <tr class="ch-grid-row" data-channel="${ch.name}">
-        <td class="ch-grid-sticky ch-grid-name">
-          <span class="ch-name">${ch.name}</span>
-          <button class="comment-toggle${hasAnyComment ? ' has-comment' : ''}" data-channel="${ch.name}" title="Комментарии">💬</button>
-        </td>
-        <td class="ch-grid-sticky ch-grid-resp">${ch.responsible || '—'}</td>
-        <td class="ch-grid-sticky ch-grid-num">${fmt(ch.plan)}</td>
-        <td class="ch-grid-sticky ch-grid-num ch-fact-cell" data-channel="${ch.name}">${fmt(ch.actual)}</td>
-        <td class="ch-grid-sticky ch-grid-num ch-yesterday">${yd > 0 ? fmt(yd) : '—'}</td>
-        <td class="ch-grid-sticky ch-grid-num ${deltaCls}">${deltaStr}</td>
-        <td class="ch-grid-sticky ch-grid-num">
-          <span class="pace-badge ${pl.cls}" title="${pl.label}">${pl.icon}</span>
-        </td>
-        <td class="ch-grid-sticky ch-grid-num"><span class="ch-pct ${totalCls}">${totalPct}%</span></td>
-        ${dayCells}
-      </tr>`;
-
-    // Comment row (hidden by default)
-    let commentItems = '';
-    for (let i = 0; i < daysTotal; i++) {
-      const dayNum    = i + 1;
-      const dateLabel = dates[i] ? fmtDate(dates[i]) : `День ${dayNum}`;
-      const text      = chComments[dayNum] || '';
-      commentItems += `
-        <div class="comment-day-item">
-          <div class="comment-day-label">${dateLabel}</div>
-          <textarea class="comment-ta" data-channel="${ch.name}" data-day="${dayNum}" placeholder="Комментарий...">${text}</textarea>
-        </div>`;
-    }
-
-    rows += `
-      <tr class="ch-comment-row hidden" data-channel="${ch.name}">
-        <td colspan="${totalCols}" class="ch-comment-cell">
-          <div class="ch-comment-inner">
-            <div class="comment-day-grid">${commentItems}</div>
-          </div>
-        </td>
-      </tr>`;
-  }
-
-  // Assemble full table
-  const wrap = document.createElement('div');
-  wrap.className = 'ch-grid-wrap';
-  wrap.innerHTML = `
-    <table class="ch-grid">
-      <thead>
-        <tr>
-          <th class="ch-grid-sticky ch-grid-name">Канал</th>
-          <th class="ch-grid-sticky ch-grid-resp">Ответственный</th>
-          <th class="ch-grid-sticky ch-grid-num">План</th>
-          <th class="ch-grid-sticky ch-grid-num">Факт</th>
-          <th class="ch-grid-sticky ch-grid-num">Вчера</th>
-          <th class="ch-grid-sticky ch-grid-num">Δ</th>
-          <th class="ch-grid-sticky ch-grid-num">Темп</th>
-          <th class="ch-grid-sticky ch-grid-num">%</th>
-          ${dayHeads}
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  container.appendChild(wrap);
-
-  // Attach fact-edit handlers
-  if (canEdit) {
-    wrap.querySelectorAll('.editable-fact').forEach(el => {
-      el.addEventListener('click', function(e) {
-        handleFactEdit(e.currentTarget);
-      });
-    });
-  }
-
-  // Attach comment toggle handlers
-  wrap.querySelectorAll('.comment-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const chName  = btn.dataset.channel;
-      const commRow = wrap.querySelector(`.ch-comment-row[data-channel="${CSS.escape(chName)}"]`);
-      if (commRow) commRow.classList.toggle('hidden');
-    });
-  });
-
-  // Attach comment textarea blur handlers
-  wrap.querySelectorAll('.comment-ta').forEach(ta => {
-    const originalVal = ta.value;
-    ta.dataset.original = originalVal;
-    ta.addEventListener('blur', () => {
-      if (ta.value !== ta.dataset.original) {
-        saveComment(launchId, ta.dataset.channel, parseInt(ta.dataset.day, 10), ta.value);
-        ta.dataset.original = ta.value;
-        // Update the toggle button indicator
-        const chName  = ta.dataset.channel;
-        const toggle  = wrap.querySelector(`.comment-toggle[data-channel="${CSS.escape(chName)}"]`);
-        if (toggle) {
-          const commRow = wrap.querySelector(`.ch-comment-row[data-channel="${CSS.escape(chName)}"]`);
-          const hasText = commRow
-            ? [...commRow.querySelectorAll('.comment-ta')].some(t => t.value.trim())
-            : false;
-          toggle.classList.toggle('has-comment', hasText);
-        }
-      }
-    });
+  // Re-open items that were expanded before the re-render
+  container.querySelectorAll('.ch-item').forEach(item => {
+    if (chListOpen.has(item.dataset.channel)) openChannelItem(item);
   });
 }
 
-async function handleFactEdit(el) {
+function sparklineHtml(daily, daysTotal) {
+  const arr = (daily || []).slice(0, daysTotal);
+  if (!arr.length) return '<div class="ch-spark"></div>';
+  const max = Math.max(...arr, 1);
+  return `<div class="ch-spark">${arr.map(v => {
+    const h = clamp((v || 0) / max * 100, 6, 100);
+    return `<span class="ch-spark-bar" style="height:${h}%" title="${fmt(v || 0)}"></span>`;
+  }).join('')}</div>`;
+}
+
+function channelItemHtml(c, maxFact) {
+  const { daysTotal } = chListState;
+  const pct = c.pct ?? 0;
+  const cls = pctClass(pct);
+  const fillCls = pct >= 100 ? 'pct-great' : pct >= 70 ? 'pct-ok' : pct >= 40 ? 'pct-warn' : 'pct-danger';
+  const barW = clamp(pct, 0, 100);
+  const nameAttr = escapeHtml(c.name);
+  const delta = c.yesterday_delta ?? 0;
+  const deltaStr = delta === 0 ? '' : (delta > 0 ? `+${fmt(delta)}` : fmt(delta));
+  const deltaCls = delta > 0 ? 'delta-up' : delta < 0 ? 'delta-down' : '';
+  return `
+    <div class="ch-item" data-channel="${nameAttr}">
+      <div class="ch-item-head">
+        <span class="ch-item-chevron">▸</span>
+        <div class="ch-item-id">
+          <span class="ch-item-name">${escapeHtml(c.name)}</span>
+          <span class="ch-item-resp">${escapeHtml(c.responsible || '—')}</span>
+        </div>
+        ${sparklineHtml(c.daily_actual, daysTotal)}
+        <div class="ch-item-nums">
+          <span class="ch-item-fact">${fmt(c.actual || 0)}</span>
+          <span class="ch-item-plan">/ ${fmt(c.plan || 0)}</span>
+          ${deltaStr ? `<span class="ch-item-delta ${deltaCls}">${deltaStr} вчера</span>` : ''}
+        </div>
+        <div class="ch-item-pctwrap">
+          <div class="ch-item-bar"><div class="ch-item-fill ${fillCls}" style="width:${barW}%"></div></div>
+          <span class="ch-pct ${cls}">${pct}%</span>
+        </div>
+      </div>
+      <div class="ch-item-body"></div>
+    </div>`;
+}
+
+function openChannelItem(item) {
+  item.classList.add('open');
+  const chev = item.querySelector('.ch-item-chevron');
+  if (chev) chev.textContent = '▾';
+  if (!item.dataset.loaded) {
+    item.dataset.loaded = '1';
+    buildChannelBody(item);
+  }
+}
+
+function toggleChannelItem(item) {
+  if (!item) return;
+  if (item.classList.contains('open')) {
+    item.classList.remove('open');
+    const chev = item.querySelector('.ch-item-chevron');
+    if (chev) chev.textContent = '▸';
+    chListOpen.delete(item.dataset.channel);
+  } else {
+    chListOpen.add(item.dataset.channel);
+    openChannelItem(item);
+  }
+}
+
+function buildChannelBody(item) {
+  const name = item.dataset.channel;
+  const c    = chListState.channels.find(x => x.name === name);
+  const body = item.querySelector('.ch-item-body');
+  if (!c || !body) return;
+  const { dates, daysTotal, launchId, canEdit, comments } = chListState;
+  const chComments = comments[name] || {};
+
+  let dayCards = '';
+  for (let i = 0; i < daysTotal; i++) {
+    const fact = c.daily_actual?.[i] ?? 0;
+    const plan = c.daily_plan?.[i]   ?? 0;
+    const pct  = plan > 0 ? Math.round(fact / plan * 100) : (fact > 0 ? 100 : 0);
+    const barCls = plan === 0 ? 'pct-none' : pct >= 100 ? 'pct-great' : pct >= 70 ? 'pct-ok' : pct >= 40 ? 'pct-warn' : 'pct-danger';
+    const dateStr = dates[i] ? fmtDate(dates[i]) : '';
+    const dayNum  = i + 1;
+    const note    = chComments[dayNum] || '';
+    const factHtml = canEdit
+      ? `<span class="dd-fact editable-day-fact" data-launch="${launchId}" data-channel="${escapeHtml(name)}" data-day="${dayNum}" data-value="${fact}">${fmt(fact)}</span>`
+      : `<span class="dd-fact">${fmt(fact)}</span>`;
+    dayCards += `
+      <div class="dd-card">
+        <div class="dd-head"><span class="dd-day">День ${dayNum}</span><span class="dd-date">${dateStr}</span></div>
+        <div class="dd-nums">${factHtml}<span class="dd-plan">/ ${fmt(plan)}</span><span class="dd-pct ${barCls}">${plan > 0 ? pct + '%' : '—'}</span></div>
+        <div class="dd-bar"><div class="dd-fill ${barCls}" style="width:${clamp(pct, 0, 100)}%"></div></div>
+        <textarea class="dd-note" data-launch="${launchId}" data-channel="${escapeHtml(name)}" data-day="${dayNum}" placeholder="заметка…">${escapeHtml(note)}</textarea>
+      </div>`;
+  }
+
+  body.innerHTML = `
+    <div class="ch-body-grid">
+      <div class="ch-body-days">
+        <div class="ch-body-label">Факт по дням${canEdit ? ' · <span class="ch-body-hint">клик по числу — редактировать</span>' : ''}</div>
+        <div class="dd-cards">${dayCards}</div>
+      </div>
+      <div class="ch-body-tasks">
+        <div class="ch-body-label">План действий <span class="ch-tasks-sub"></span></div>
+        <div class="ch-tasks-add">
+          <input type="text" class="add-channel-input ctab-task-input" placeholder="Новая задача…" maxlength="300">
+          <button type="button" class="btn-secondary btn-sm ctab-task-add">+ Добавить</button>
+        </div>
+        <div class="ch-tasks-list ctab-tasks-list"><div class="loading-cell">Загрузка…</div></div>
+      </div>
+    </div>`;
+
+  if (canEdit) {
+    body.querySelectorAll('.editable-day-fact').forEach(el => {
+      el.addEventListener('click', () => handleDayFactEdit(el));
+    });
+  }
+  body.querySelectorAll('.dd-note').forEach(ta => {
+    ta.dataset.original = ta.value;
+    ta.addEventListener('blur', () => {
+      if (ta.value !== ta.dataset.original) {
+        saveComment(ta.dataset.launch, ta.dataset.channel, parseInt(ta.dataset.day, 10), ta.value);
+        ta.dataset.original = ta.value;
+        if (chListState.comments[name]) chListState.comments[name][parseInt(ta.dataset.day, 10)] = ta.value;
+      }
+    });
+  });
+
+  if (launchId) {
+    const addBtn = body.querySelector('.ctab-task-add');
+    const input  = body.querySelector('.ctab-task-input');
+    addBtn.addEventListener('click', () => addCtabTask(name, item));
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') addCtabTask(name, item); });
+    loadCtabTasks(name, item);
+  } else {
+    body.querySelector('.ctab-tasks-list').innerHTML = '<div class="ch-tasks-empty">Задачи доступны при выборе запуска</div>';
+  }
+}
+
+// ── Channel-tab tasks (action plan) ─────────────────────────────────────────
+function ctabTaskHtml(t) {
+  return `
+    <div class="ch-task ${t.done ? 'ch-task-done' : ''}" data-id="${t.id}">
+      <label class="ch-task-check">
+        <input type="checkbox" data-id="${t.id}" ${t.done ? 'checked' : ''}>
+        <span class="ch-task-text">${escapeHtml(t.text)}</span>
+      </label>
+      <button class="ch-task-del" data-id="${t.id}" title="Удалить">×</button>
+    </div>`;
+}
+
+async function loadCtabTasks(name, item) {
+  const launchId = chListState.launchId;
+  const listEl = item.querySelector('.ctab-tasks-list');
+  const subEl  = item.querySelector('.ch-tasks-sub');
+  if (!listEl || !launchId) return;
+  let tasks = [];
+  try {
+    tasks = await fetch(`/api/launches/${launchId}/channels/${encodeURIComponent(name)}/tasks`)
+      .then(r => r.ok ? r.json() : []);
+  } catch { tasks = []; }
+  listEl.innerHTML = tasks.length
+    ? tasks.map(t => ctabTaskHtml(t)).join('')
+    : '<div class="ch-tasks-empty">Пока нет задач</div>';
+  const open = tasks.filter(t => !t.done).length;
+  if (subEl) subEl.textContent = tasks.length ? `${open} из ${tasks.length}` : '';
+  listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => ctabToggleTask(cb.dataset.id, cb.checked, name, item));
+  });
+  listEl.querySelectorAll('.ch-task-del').forEach(b => {
+    b.addEventListener('click', () => ctabDeleteTask(b.dataset.id, name, item));
+  });
+}
+
+async function addCtabTask(name, item) {
+  const launchId = chListState.launchId;
+  const input = item.querySelector('.ctab-task-input');
+  const text  = (input?.value || '').trim();
+  if (!text || !launchId) return;
+  input.value = '';
+  try {
+    await fetch(`/api/launches/${launchId}/channels/${encodeURIComponent(name)}/tasks`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+  } catch { /* ignore */ }
+  loadCtabTasks(name, item);
+}
+
+async function ctabToggleTask(id, done, name, item) {
+  try {
+    await fetch(`/api/tasks/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ done }),
+    });
+  } catch { /* ignore */ }
+  loadCtabTasks(name, item);
+}
+
+async function ctabDeleteTask(id, name, item) {
+  try {
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+  } catch { /* ignore */ }
+  loadCtabTasks(name, item);
+}
+
+async function handleDayFactEdit(el) {
   if (el.querySelector('input')) return; // already editing
 
   const launchId = el.dataset.launch;
   const channel  = el.dataset.channel;
   const dayNum   = parseInt(el.dataset.day, 10);
   const oldVal   = parseInt(el.dataset.value, 10) || 0;
-  const pctElId  = el.dataset.planEl;
 
   const input = document.createElement('input');
   input.type  = 'number';
@@ -779,13 +684,16 @@ async function handleFactEdit(el) {
   input.focus();
   input.select();
 
+  let saving = false;
   async function save() {
+    if (saving) return;
     const newVal = parseInt(input.value, 10);
     if (isNaN(newVal) || newVal === oldVal) {
       el.textContent = fmt(oldVal);
       el.dataset.value = oldVal;
       return;
     }
+    saving = true;
     el.textContent = '…';
     try {
       const res = await fetch(`/api/launches/${launchId}/facts`, {
@@ -794,19 +702,7 @@ async function handleFactEdit(el) {
         body: JSON.stringify({ channel_name: channel, day_num: dayNum, fact: newVal }),
       });
       if (!res.ok) throw new Error();
-      el.textContent = fmt(newVal);
-      el.dataset.value = newVal;
-      // Update pct display in the same cell
-      const cell    = el.closest('.day-cell-inner');
-      const planEl  = cell?.querySelector('.dci-plan');
-      if (planEl && pctElId) {
-        const planText = planEl.textContent.replace('пл ', '').replace(/\s/g, '').replace(/ /g, '');
-        const planVal  = parseInt(planText.replace(/[^\d]/g, ''), 10) || 0;
-        const newPct   = planVal > 0 ? Math.round((newVal / planVal) * 100) : (newVal > 0 ? 100 : 0);
-        const pctEl    = document.getElementById(pctElId);
-        if (pctEl) pctEl.textContent = planVal > 0 ? newPct + '%' : '—';
-      }
-      // Refresh totals
+      // Refresh dashboard data, then re-render list (open channels restored)
       await loadDashboard();
       // Re-render channels tab if still open
       if (document.querySelector('.nav-item[data-tab="channels"]')?.classList.contains('active')) {
@@ -1110,7 +1006,7 @@ document.getElementById('newLaunchForm').addEventListener('submit', async e => {
     closeModal();
     // Switch to the new launch
     activeLaunchId = created.id;
-    selectedDay    = 'all';
+    chListOpen.clear();
     await loadLaunchSelector();
     document.querySelector('.nav-item[data-tab="dashboard"]').click();
     await loadDashboard();
