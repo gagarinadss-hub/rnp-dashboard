@@ -58,6 +58,18 @@ def init_db():
                 UNIQUE(launch_id, channel_id, day_num)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS channel_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                launch_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                text TEXT NOT NULL DEFAULT '',
+                done INTEGER NOT NULL DEFAULT 0,
+                author TEXT DEFAULT '',
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
         for sql in [
             "ALTER TABLE launches ADD COLUMN event_end_date TEXT",
             "ALTER TABLE launches ADD COLUMN plan_curve_ref INTEGER",
@@ -183,6 +195,62 @@ def upsert_comment(launch_id: int, channel_name: str, day_num, comment: str, aut
             (launch_id, ch_id, day_num)
         ).fetchone()
         return {"id": row["id"], "channel": channel_name, "day_num": day_num, "comment": comment}
+
+
+# ── Channel tasks (список задач/комментариев на канал в рамках запуска) ──────
+def get_channel_tasks(launch_id: int, channel_name: str) -> list:
+    with get_db() as conn:
+        ch = conn.execute("SELECT id FROM channels WHERE name=?", (channel_name,)).fetchone()
+        if not ch:
+            return []
+        rows = conn.execute(
+            """SELECT id, text, done, author, created_at, updated_at
+               FROM channel_tasks WHERE launch_id=? AND channel_id=?
+               ORDER BY done ASC, created_at ASC""",
+            (launch_id, ch["id"])
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_channel_task(launch_id: int, channel_name: str, text: str, author: str = "") -> dict:
+    from datetime import datetime
+    now = datetime.now().isoformat()
+    with get_db() as conn:
+        ch_id = upsert_channel(conn, channel_name)
+        cur = conn.execute(
+            """INSERT INTO channel_tasks(launch_id, channel_id, text, done, author, created_at, updated_at)
+               VALUES(?,?,?,0,?,?,?)""",
+            (launch_id, ch_id, text, author, now, now)
+        )
+        return {"id": cur.lastrowid, "text": text, "done": 0, "author": author,
+                "created_at": now, "updated_at": now}
+
+
+def update_channel_task(task_id: int, text=None, done=None) -> dict | None:
+    from datetime import datetime
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM channel_tasks WHERE id=?", (task_id,)).fetchone()
+        if not row:
+            return None
+        sets, params = [], []
+        if text is not None:
+            sets.append("text=?"); params.append(text)
+        if done is not None:
+            sets.append("done=?"); params.append(1 if done else 0)
+        sets.append("updated_at=?"); params.append(datetime.now().isoformat())
+        params.append(task_id)
+        conn.execute(f"UPDATE channel_tasks SET {', '.join(sets)} WHERE id=?", params)
+        r = conn.execute(
+            "SELECT id, text, done, author, created_at, updated_at FROM channel_tasks WHERE id=?",
+            (task_id,)
+        ).fetchone()
+        return dict(r)
+
+
+def delete_channel_task(task_id: int) -> bool:
+    with get_db() as conn:
+        cur = conn.execute("DELETE FROM channel_tasks WHERE id=?", (task_id,))
+        return cur.rowcount > 0
 
 
 def set_daily_fact(launch_id: int, channel_name: str, day_num: int, fact: int):

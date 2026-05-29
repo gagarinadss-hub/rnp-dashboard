@@ -1664,9 +1664,14 @@ document.getElementById('compareLoadBtn')?.addEventListener('click', async () =>
 });
 
 // ── Channel drill-down history ─────────────────────────────────────────────
+let chHistChannel  = null;
+let chHistLaunchId = null;
+
 async function openChannelHistory(name) {
   const overlay = document.getElementById('chHistoryOverlay');
   const body    = document.getElementById('chHistoryBody');
+  chHistChannel  = name;
+  chHistLaunchId = activeLaunchId || dashState?.overview?.launch_id || null;
   document.getElementById('chHistoryTitle').textContent = name;
   body.innerHTML = '<div class="loading-cell">Загрузка…</div>';
   overlay.classList.remove('hidden');
@@ -1681,6 +1686,7 @@ async function openChannelHistory(name) {
     return;
   }
   renderChannelHistory(data);
+  loadChannelTasks();
 }
 
 function renderChannelHistory(data) {
@@ -1719,6 +1725,17 @@ function renderChannelHistory(data) {
   body.innerHTML = `
     ${cards}
     <div class="ch-hist-chart-wrap"><canvas id="chHistChart"></canvas></div>
+    <div class="ch-tasks">
+      <div class="ch-tasks-head">
+        <h4>📋 Задачи по каналу</h4>
+        <span class="ch-tasks-sub" id="chTasksSub"></span>
+      </div>
+      <div class="ch-tasks-add">
+        <input type="text" id="chTaskInput" class="add-channel-input" placeholder="Новая задача (напр. «запостить в 12:00»)…" maxlength="300">
+        <button type="button" id="chTaskAddBtn" class="btn-secondary btn-sm">+ Добавить</button>
+      </div>
+      <div id="chTasksList" class="ch-tasks-list"><div class="loading-cell">Загрузка…</div></div>
+    </div>
     <table class="ch-hist-table">
       <thead><tr><th>Запуск</th><th class="num">План</th><th class="num">Факт</th><th>%</th><th>Прогресс</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5" class="loading-cell">Нет данных</td></tr>'}</tbody>
@@ -1756,6 +1773,95 @@ function renderChannelHistory(data) {
     });
   }
 }
+
+// ── Channel tasks (внутри drill-down) ──────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadChannelTasks() {
+  const list = document.getElementById('chTasksList');
+  const sub  = document.getElementById('chTasksSub');
+  const addBtn = document.getElementById('chTaskAddBtn');
+  const input  = document.getElementById('chTaskInput');
+  if (!list) return;
+
+  if (!chHistLaunchId) {
+    list.innerHTML = '<div class="ch-tasks-empty">Задачи доступны при выборе запуска</div>';
+    if (input) input.disabled = true;
+    if (addBtn) addBtn.disabled = true;
+    return;
+  }
+
+  // wire add controls (once per render)
+  if (addBtn && !addBtn.dataset.wired) {
+    addBtn.dataset.wired = '1';
+    addBtn.addEventListener('click', addChannelTask);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') addChannelTask(); });
+  }
+
+  let tasks = [];
+  try {
+    tasks = await fetch(`/api/launches/${chHistLaunchId}/channels/${encodeURIComponent(chHistChannel)}/tasks`)
+      .then(r => r.ok ? r.json() : []);
+  } catch { tasks = []; }
+  renderTasksList(tasks);
+  const open = tasks.filter(t => !t.done).length;
+  if (sub) sub.textContent = tasks.length ? `${open} открыто · ${tasks.length} всего` : '';
+}
+
+function renderTasksList(tasks) {
+  const list = document.getElementById('chTasksList');
+  if (!list) return;
+  if (!tasks.length) {
+    list.innerHTML = '<div class="ch-tasks-empty">Пока нет задач</div>';
+    return;
+  }
+  list.innerHTML = tasks.map(t => `
+    <div class="ch-task ${t.done ? 'ch-task-done' : ''}" data-id="${t.id}">
+      <label class="ch-task-check">
+        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleChannelTask(${t.id}, this.checked)">
+        <span class="ch-task-text">${escapeHtml(t.text)}</span>
+      </label>
+      <button class="ch-task-del" title="Удалить" onclick="deleteChannelTask(${t.id})">×</button>
+    </div>`).join('');
+}
+
+async function addChannelTask() {
+  const input = document.getElementById('chTaskInput');
+  if (!input || !chHistLaunchId) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  try {
+    await fetch(`/api/launches/${chHistLaunchId}/channels/${encodeURIComponent(chHistChannel)}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+  } catch {}
+  loadChannelTasks();
+}
+
+async function toggleChannelTask(id, done) {
+  try {
+    await fetch(`/api/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ done }),
+    });
+  } catch {}
+  loadChannelTasks();
+}
+
+async function deleteChannelTask(id) {
+  try {
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+  } catch {}
+  loadChannelTasks();
+}
+window.toggleChannelTask = toggleChannelTask;
+window.deleteChannelTask = deleteChannelTask;
 
 function closeChHistory() {
   document.getElementById('chHistoryOverlay').classList.add('hidden');

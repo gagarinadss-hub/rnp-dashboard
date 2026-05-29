@@ -1672,3 +1672,39 @@ thead .ch-grid-sticky { z-index: 4; }
 .pace-ahead   { color: #047857; background: rgba(16,185,129,0.14); }
 .pace-behind  { color: #be123c; background: rgba(244,63,94,0.14); }
 .pace-ontrack { color: #6d28d9; background: rgba(124,58,237,0.12); }
+
+/* ── Channel tasks (в drill-down) ───────────────────────────────────────── */
+.ch-tasks {
+  margin: 8px 0 22px;
+  padding: 16px;
+  background: var(--bg, #f6f5fb);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.ch-tasks-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.ch-tasks-head h4 { font-size: 14px; font-weight: 700; }
+.ch-tasks-sub { font-size: 11px; color: var(--text-muted, #8a8aa3); font-weight: 600; }
+.ch-tasks-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.ch-tasks-add .add-channel-input { flex: 1; }
+.ch-tasks-list { display: flex; flex-direction: column; gap: 6px; }
+.ch-tasks-empty { font-size: 13px; color: var(--text-muted, #8a8aa3); padding: 6px 2px; }
+.ch-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.ch-task-check { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+.ch-task-check input { width: 17px; height: 17px; cursor: pointer; accent-color: #7C3AED; flex-shrink: 0; }
+.ch-task-text { font-size: 13px; line-height: 1.35; }
+.ch-task-done .ch-task-text { text-decoration: line-through; color: var(--text-muted, #8a8aa3); }
+.ch-task-del {
+  background: none; border: none; cursor: pointer;
+  font-size: 20px; line-height: 1; color: var(--text-muted, #c0c0d0);
+  padding: 0 4px; border-radius: 6px; transition: all .15s; flex-shrink: 0;
+}
+.ch-task-del:hover { color: #be123c; background: rgba(244,63,94,0.10); }

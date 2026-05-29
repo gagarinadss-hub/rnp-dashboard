@@ -275,6 +275,43 @@ def upsert_comment_endpoint(launch_id: int, body: dict):
     return upsert_comment(launch_id, channel_name, day_num, comment, author)
 
 
+@app.get("/api/launches/{launch_id}/channels/{channel_name}/tasks")
+def list_channel_tasks(launch_id: int, channel_name: str):
+    from db import get_channel_tasks
+    return get_channel_tasks(launch_id, channel_name.strip())
+
+
+@app.post("/api/launches/{launch_id}/channels/{channel_name}/tasks")
+def create_channel_task(launch_id: int, channel_name: str, body: dict):
+    from db import add_channel_task
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "text required")
+    author = (body.get("author") or "").strip()
+    return add_channel_task(launch_id, channel_name.strip(), text, author)
+
+
+@app.patch("/api/tasks/{task_id}")
+def patch_channel_task(task_id: int, body: dict):
+    from db import update_channel_task
+    text = body.get("text")
+    if text is not None:
+        text = str(text).strip()
+    done = body.get("done")
+    result = update_channel_task(task_id, text=text, done=done)
+    if result is None:
+        raise HTTPException(404, "Task not found")
+    return result
+
+
+@app.delete("/api/tasks/{task_id}")
+def remove_channel_task(task_id: int):
+    from db import delete_channel_task
+    if not delete_channel_task(task_id):
+        raise HTTPException(404, "Task not found")
+    return {"status": "deleted", "id": task_id}
+
+
 @app.put("/api/launches/{launch_id}/facts")
 def update_fact(launch_id: int, body: dict):
     """Manual fact entry: set (overwrite) registrations for a channel/day."""
