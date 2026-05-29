@@ -146,6 +146,7 @@ def _parse_base(ss, mapping: dict):
                 return hdr.index(n)
         return default
 
+    c_id   = col_of("sb_id", "tg id", "телефон", default=0)
     c_date = col_of("дата входа", "дата", default=1)
     c_trig = col_of("trigger", default=7)
     c_src  = col_of("utm_source", default=8)
@@ -155,10 +156,20 @@ def _parse_base(ss, mapping: dict):
     ch_date = defaultdict(lambda: defaultdict(int))
     date_cnt = Counter()
     total = 0
+    seen = set()        # дедуп по SB_ID — команда считает УНИКАЛЬНЫЕ регистрации
+    dropped_dups = 0
 
     for r in rows[1:]:
         if not any(str(c).strip() for c in r):
             continue
+        # Дедуп: один человек (один SB_ID) = одна регистрация.
+        # База отсортирована по дате → первое вхождение = самая ранняя дата.
+        uid = r[c_id].strip() if c_id is not None and c_id < len(r) else ""
+        if uid:
+            if uid in seen:
+                dropped_dups += 1
+                continue
+            seen.add(uid)
         date_str = r[c_date].strip() if c_date < len(r) else ""
         d = _parse_date(date_str)
         if not d:
@@ -283,13 +294,9 @@ def import_spreadsheet(spreadsheet_id: str) -> dict:
     rnp      = _parse_rnp(ss)
     ch_date, date_cnt, base_total = _parse_base(ss, mapping)
 
-    # Рефералки (если есть отдельный лист и Рефки мало в Базе)
-    ref_by_date = _parse_referral(ss)
-    if ref_by_date:
-        for d, n in ref_by_date.items():
-            ch_date.setdefault("Рефка", defaultdict(int))
-            ch_date["Рефка"][d] += n
-            date_cnt[d] += n
+    # ВАЖНО: «Реферальную» НЕ приплюсовываем — рефералы уже сидят в «Базе»
+    # (под своими utm-метками). Отдельный лист был бы двойным счётом:
+    # дедуп «Базы» по SB_ID уже даёт официальное число РНП «ОБЩИЕ».
 
     reg_start, reg_end = _window(date_cnt)
     if not reg_start:
