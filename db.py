@@ -749,6 +749,76 @@ def get_launch_detail(launch_id: int) -> dict:
         }
 
 
+def get_channel_history(channel_name: str) -> dict:
+    """История одного канала по всем запускам: план/факт/% хронологически,
+    плюс агрегаты (средний %, лучший/худший запуск, тренд)."""
+    with get_db() as conn:
+        ch = conn.execute(
+            "SELECT id, name FROM channels WHERE name=?", (channel_name,)
+        ).fetchone()
+        if not ch:
+            return None
+        ch_id = ch["id"]
+
+        rows = conn.execute(
+            """SELECT l.id, l.name, l.reg_start, l.event_date, l.is_active,
+                      lc.plan AS plan, lc.responsible AS responsible
+               FROM launch_channels lc
+               JOIN launches l ON l.id = lc.launch_id
+               WHERE lc.channel_id = ?
+               ORDER BY COALESCE(l.reg_start, l.event_date, '')""",
+            (ch_id,)
+        ).fetchall()
+
+        history = []
+        for r in rows:
+            actual = conn.execute(
+                "SELECT COALESCE(SUM(count),0) AS s FROM daily_registrations WHERE launch_id=? AND channel_id=?",
+                (r["id"], ch_id)
+            ).fetchone()["s"]
+            plan = r["plan"] or 0
+            pct = round(actual / plan * 100, 1) if plan > 0 else None
+            history.append({
+                "launch_id":   r["id"],
+                "launch_name": r["name"],
+                "reg_start":   r["reg_start"],
+                "event_date":  r["event_date"],
+                "is_active":   r["is_active"],
+                "plan":        plan,
+                "actual":      actual,
+                "pct":         pct,
+                "responsible": r["responsible"],
+            })
+
+        # агрегаты по завершённым запускам (где есть план и факт)
+        pcts = [h["pct"] for h in history if h["pct"] is not None and not h["is_active"]]
+        actuals = [h for h in history if not h["is_active"]]
+        avg_pct = round(sum(pcts) / len(pcts), 1) if pcts else None
+        best = max((h for h in actuals if h["pct"] is not None), key=lambda x: x["pct"], default=None)
+        worst = min((h for h in actuals if h["pct"] is not None), key=lambda x: x["pct"], default=None)
+        max_actual = max(actuals, key=lambda x: x["actual"], default=None)
+
+        # тренд: сравниваем средний % первой половины и второй половины
+        trend = None
+        if len(pcts) >= 4:
+            mid = len(pcts) // 2
+            first = sum(pcts[:mid]) / mid
+            second = sum(pcts[mid:]) / (len(pcts) - mid)
+            diff = round(second - first, 1)
+            trend = {"direction": "up" if diff > 3 else ("down" if diff < -3 else "flat"), "diff": diff}
+
+        return {
+            "channel":     ch["name"],
+            "history":     history,
+            "avg_pct":     avg_pct,
+            "best":        {"launch_name": best["launch_name"], "pct": best["pct"]} if best else None,
+            "worst":       {"launch_name": worst["launch_name"], "pct": worst["pct"]} if worst else None,
+            "max_actual":  {"launch_name": max_actual["launch_name"], "actual": max_actual["actual"]} if max_actual else None,
+            "total_launches": len(history),
+            "trend":       trend,
+        }
+
+
 def save_utm_stats(launch_id: int, stats: list[dict]):
     """stats = [{utm_source, utm_medium, platform, count, resolved_channel}]"""
     with get_db() as conn:

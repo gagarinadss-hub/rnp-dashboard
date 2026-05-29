@@ -197,6 +197,16 @@ def list_launches():
     return get_all_launches()
 
 
+@app.get("/api/channels/{channel_name}/history")
+def channel_history(channel_name: str):
+    """Drill-down: как канал отрабатывал во всех запусках."""
+    from db import get_channel_history
+    data = get_channel_history(channel_name)
+    if not data:
+        raise HTTPException(404, "Channel not found")
+    return data
+
+
 @app.get("/api/launches/{launch_id}/dashboard")
 def launch_dashboard(launch_id: int):
     """DB-based dashboard for any launch (including active)."""

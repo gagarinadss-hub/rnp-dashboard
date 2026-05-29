@@ -1609,3 +1609,55 @@ thead .ch-grid-sticky { z-index: 4; }
   .alerts-feed { grid-template-columns: 1fr; }
   .curve-select { max-width: 140px; }
 }
+
+/* ── Channel drill-down ─────────────────────────────────────────────────── */
+.ch-name-link { cursor: pointer; border-bottom: 1px dashed var(--accent, #7C3AED); transition: color .15s; }
+.ch-name-link:hover { color: var(--accent, #7C3AED); }
+
+.modal-wide { max-width: 840px; }
+.ch-history-body { padding: 18px 24px 24px; }
+
+.ch-hist-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.ch-hist-card {
+  background: var(--bg, #f6f5fb);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.chc-label { font-size: 11px; color: var(--text-muted, #8a8aa3); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.chc-val   { font-size: 18px; font-weight: 700; }
+.chc-sub   { font-size: 10px; color: var(--text-muted, #8a8aa3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ch-hist-chart-wrap { height: 240px; margin-bottom: 20px; }
+
+.ch-hist-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ch-hist-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted, #8a8aa3);
+  border-bottom: 1px solid var(--border);
+}
+.ch-hist-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.ch-hist-table .num { text-align: right; }
+.ch-hist-active { background: rgba(124,58,237,0.06); }
+.badge-live {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: #10B981;
+  padding: 1px 6px;
+  border-radius: 6px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}

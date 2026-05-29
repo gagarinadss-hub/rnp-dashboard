@@ -473,7 +473,7 @@ function renderChannelTable(filter = '') {
     const cls   = pctClass(c.pct);
     return `
       <tr>
-        <td><span class="ch-name">${c.name}</span></td>
+        <td><span class="ch-name ch-name-link" onclick="openChannelHistory(${JSON.stringify(c.name).replace(/"/g, '&quot;')})">${c.name}</span></td>
         <td><span class="ch-resp">${c.responsible || '—'}</span></td>
         <td class="num">${fmt(c.plan)}</td>
         <td class="num">${fmt(c.actual)}</td>
@@ -1591,6 +1591,110 @@ document.getElementById('compareLoadBtn')?.addEventListener('click', async () =>
     btn.textContent = 'Сравнить';
   }
 });
+
+// ── Channel drill-down history ─────────────────────────────────────────────
+async function openChannelHistory(name) {
+  const overlay = document.getElementById('chHistoryOverlay');
+  const body    = document.getElementById('chHistoryBody');
+  document.getElementById('chHistoryTitle').textContent = name;
+  body.innerHTML = '<div class="loading-cell">Загрузка…</div>';
+  overlay.classList.remove('hidden');
+
+  let data;
+  try {
+    const res = await fetch(`/api/channels/${encodeURIComponent(name)}/history`);
+    if (!res.ok) throw new Error('not found');
+    data = await res.json();
+  } catch (e) {
+    body.innerHTML = '<div class="loading-cell">Нет данных по этому каналу</div>';
+    return;
+  }
+  renderChannelHistory(data);
+}
+
+function renderChannelHistory(data) {
+  const body = document.getElementById('chHistoryBody');
+  const hist = data.history || [];
+
+  // summary cards
+  const trendTxt = data.trend
+    ? (data.trend.direction === 'up'   ? `↑ растёт (+${data.trend.diff}пп)`
+     : data.trend.direction === 'down' ? `↓ падает (${data.trend.diff}пп)`
+     : '→ стабильно')
+    : '—';
+  const cards = `
+    <div class="ch-hist-cards">
+      <div class="ch-hist-card"><span class="chc-label">Запусков</span><span class="chc-val">${data.total_launches}</span></div>
+      <div class="ch-hist-card"><span class="chc-label">Средн. %</span><span class="chc-val ${pctClass(data.avg_pct)}">${data.avg_pct != null ? data.avg_pct + '%' : '—'}</span></div>
+      <div class="ch-hist-card"><span class="chc-label">Лучший</span><span class="chc-val">${data.best ? data.best.pct + '%' : '—'}</span><span class="chc-sub">${data.best ? data.best.launch_name : ''}</span></div>
+      <div class="ch-hist-card"><span class="chc-label">Худший</span><span class="chc-val">${data.worst ? data.worst.pct + '%' : '—'}</span><span class="chc-sub">${data.worst ? data.worst.launch_name : ''}</span></div>
+      <div class="ch-hist-card"><span class="chc-label">Макс. факт</span><span class="chc-val">${data.max_actual ? fmt(data.max_actual.actual) : '—'}</span><span class="chc-sub">${data.max_actual ? data.max_actual.launch_name : ''}</span></div>
+      <div class="ch-hist-card"><span class="chc-label">Тренд</span><span class="chc-val">${trendTxt}</span></div>
+    </div>`;
+
+  const rows = hist.map(h => {
+    const cls = pctClass(h.pct);
+    const fillW = clamp(h.pct || 0, 0, 100);
+    return `
+      <tr class="${h.is_active ? 'ch-hist-active' : ''}">
+        <td>${h.launch_name}${h.is_active ? ' <span class="badge-live">live</span>' : ''}</td>
+        <td class="num">${fmt(h.plan)}</td>
+        <td class="num">${fmt(h.actual)}</td>
+        <td><span class="ch-pct ${cls}">${h.pct != null ? h.pct + '%' : '—'}</span></td>
+        <td><div class="progress-mini"><div class="progress-mini-bar"><div class="progress-mini-fill" style="width:${fillW}%"></div></div></div></td>
+      </tr>`;
+  }).join('');
+
+  body.innerHTML = `
+    ${cards}
+    <div class="ch-hist-chart-wrap"><canvas id="chHistChart"></canvas></div>
+    <table class="ch-hist-table">
+      <thead><tr><th>Запуск</th><th class="num">План</th><th class="num">Факт</th><th>%</th><th>Прогресс</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="loading-cell">Нет данных</td></tr>'}</tbody>
+    </table>`;
+
+  // chart: % выполнения по запускам (хронологически)
+  if (charts.chHist) { charts.chHist.destroy(); charts.chHist = null; }
+  const ctx = document.getElementById('chHistChart');
+  if (ctx && hist.length) {
+    charts.chHist = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: hist.map(h => h.launch_name.length > 22 ? h.launch_name.slice(0, 22) + '…' : h.launch_name),
+        datasets: [{
+          label: '% выполнения плана',
+          data: hist.map(h => h.pct),
+          backgroundColor: hist.map(h => h.pct >= 100 ? '#10B981' : h.pct >= 60 ? '#3B82F6' : h.pct >= 30 ? '#EAB308' : '#F43F5E'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => {
+            const h = hist[c.dataIndex];
+            return `${h.pct}% · факт ${fmt(h.actual)} / план ${fmt(h.plan)}`;
+          } } }
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => v + '%' } },
+          x: { ticks: { maxRotation: 60, minRotation: 30, font: { size: 10 } } }
+        }
+      }
+    });
+  }
+}
+
+function closeChHistory() {
+  document.getElementById('chHistoryOverlay').classList.add('hidden');
+  if (charts.chHist) { charts.chHist.destroy(); charts.chHist = null; }
+}
+document.getElementById('closeChHistory').addEventListener('click', closeChHistory);
+document.getElementById('chHistoryOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('chHistoryOverlay')) closeChHistory();
+});
+window.openChannelHistory = openChannelHistory;
 
 // ── Auto-refresh ───────────────────────────────────────────────────────────
 setInterval(() => loadDashboard(true), REFRESH_MS);
