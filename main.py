@@ -369,6 +369,27 @@ def webhook(body: dict):
     return {"status": "ok", "day_num": day_num}
 
 
+@app.post("/api/admin/historical-import")
+def admin_historical_import(body: dict):
+    """Прогоняет исторический импорт дашбордов прямо на сервере.
+    Тело: {token, sheets:[spreadsheet_id, ...]}. Активный запуск не трогается."""
+    token = body.get("token") or ""
+    if token != WEBHOOK_TOKEN:
+        raise HTTPException(403, "Invalid token")
+    sheets = body.get("sheets") or []
+    if not isinstance(sheets, list) or not sheets:
+        raise HTTPException(400, "Provide non-empty 'sheets' list")
+    from historical_importer import import_spreadsheet
+    from db import get_active_launch_id
+    results = []
+    for sid in sheets:
+        try:
+            results.append(import_spreadsheet(sid))
+        except Exception as e:
+            results.append({"spreadsheet": str(sid)[:14], "error": f"{type(e).__name__}: {e}"})
+    return {"results": results, "active_launch": get_active_launch_id()}
+
+
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")
 
 if __name__ == "__main__":
