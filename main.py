@@ -336,6 +336,16 @@ def compare_launches(launch_id: int, ref_launch_id: int):
     return data
 
 
+@app.get("/api/launches/{launch_id}/pace")
+def launch_pace(launch_id: int):
+    """Темп запуска vs среднеисторический (доля плана по дням)."""
+    from db import get_pace_benchmark
+    data = get_pace_benchmark(launch_id)
+    if not data:
+        raise HTTPException(404, "No benchmark data available")
+    return data
+
+
 @app.get("/api/launches/{launch_id}/utm-labels")
 def get_utm_labels(launch_id: int):
     from db import get_utm_stats, get_label_mappings

@@ -1661,3 +1661,14 @@ thead .ch-grid-sticky { z-index: 4; }
   vertical-align: middle;
   text-transform: uppercase;
 }
+
+/* ── Pace benchmark verdict ─────────────────────────────────────────────── */
+.pace-verdict {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 8px;
+}
+.pace-ahead   { color: #047857; background: rgba(16,185,129,0.14); }
+.pace-behind  { color: #be123c; background: rgba(244,63,94,0.14); }
+.pace-ontrack { color: #6d28d9; background: rgba(124,58,237,0.12); }

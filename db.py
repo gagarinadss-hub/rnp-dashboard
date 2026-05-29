@@ -638,6 +638,101 @@ def get_comparison_data(launch_id: int, ref_launch_id: int) -> dict:
         }
 
 
+def get_pace_benchmark(launch_id: int) -> dict:
+    """Темп текущего запуска vs среднеисторический.
+    На каждый день N: какую долю плана (%) набрал запуск к этому дню.
+    Бенчмарк = среднее по всем завершённым запускам с планом и данными.
+    Плюс огибающая лучший/худший. Вердикт на текущий день."""
+    with get_db() as conn:
+        target = conn.execute(
+            "SELECT id, name, total_plan, is_active FROM launches WHERE id=?", (launch_id,)
+        ).fetchone()
+        if not target or not target["total_plan"]:
+            return None
+
+        def _cum_pct_curve(lid, plan):
+            rows = conn.execute(
+                """SELECT day_num, SUM(count) AS total
+                   FROM daily_registrations WHERE launch_id=?
+                   GROUP BY day_num ORDER BY day_num""", (lid,)
+            ).fetchall()
+            if not rows or plan <= 0:
+                return []
+            max_day = max(r["day_num"] for r in rows)
+            daily = {r["day_num"]: r["total"] for r in rows}
+            running = 0
+            curve = []
+            for d in range(1, max_day + 1):
+                running += daily.get(d, 0)
+                curve.append(round(running / plan * 100, 1))
+            return curve
+
+        target_curve = _cum_pct_curve(launch_id, target["total_plan"])
+
+        others = conn.execute(
+            "SELECT id, total_plan FROM launches WHERE id != ? AND total_plan > 0",
+            (launch_id,)
+        ).fetchall()
+        ref_curves = []
+        for o in others:
+            c = _cum_pct_curve(o["id"], o["total_plan"])
+            if len(c) >= 3:                       # только осмысленные кривые
+                ref_curves.append(c)
+
+        if not ref_curves:
+            return None
+
+        # обрезаем «хвосты»: день идёт в бенчмарк, только если данные есть
+        # хотя бы у половины запусков (иначе средняя кривая искажается единичными
+        # запусками с поздними регистрациями). Но не короче текущего дня запуска.
+        max_len = max(len(c) for c in ref_curves)
+        min_cov = max(2, len(ref_curves) // 2)
+        bench_days = 0
+        for d in range(max_len):
+            cov = sum(1 for c in ref_curves if d < len(c))
+            if cov >= min_cov:
+                bench_days = d + 1
+        bench_days = max(bench_days, len(target_curve))
+
+        avg_curve, best_curve, worst_curve = [], [], []
+        for d in range(bench_days):
+            vals = [c[d] for c in ref_curves if d < len(c)]
+            if not vals:
+                avg_curve.append(avg_curve[-1] if avg_curve else 0)
+                best_curve.append(best_curve[-1] if best_curve else 0)
+                worst_curve.append(worst_curve[-1] if worst_curve else 0)
+                continue
+            avg_curve.append(round(sum(vals) / len(vals), 1))
+            best_curve.append(max(vals))
+            worst_curve.append(min(vals))
+
+        # вердикт на текущий день запуска
+        verdict = None
+        cur_day = len(target_curve)
+        if cur_day > 0 and cur_day <= len(avg_curve):
+            t = target_curve[-1]
+            b = avg_curve[cur_day - 1]
+            delta = round(t - b, 1)
+            verdict = {
+                "day":          cur_day,
+                "target_pct":   t,
+                "bench_pct":    b,
+                "delta":        delta,
+                "status":       "ahead" if delta > 2 else ("behind" if delta < -2 else "ontrack"),
+            }
+
+        return {
+            "launch":       {"id": launch_id, "name": target["name"], "plan": target["total_plan"], "is_active": target["is_active"]},
+            "days":         list(range(1, bench_days + 1)),
+            "target_curve": target_curve,
+            "avg_curve":    avg_curve,
+            "best_curve":   best_curve,
+            "worst_curve":  worst_curve,
+            "ref_count":    len(ref_curves),
+            "verdict":      verdict,
+        }
+
+
 def get_all_launches() -> list:
     with get_db() as conn:
         launches = conn.execute(

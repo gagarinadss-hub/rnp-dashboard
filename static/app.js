@@ -1468,6 +1468,77 @@ async function initCompareTab() {
 
   document.getElementById('compareEmpty').style.display = '';
   document.getElementById('compareResult').style.display = 'none';
+
+  renderPaceBenchmark(currentId);
+}
+
+let paceChart = null;
+async function renderPaceBenchmark(launchId) {
+  const card = document.getElementById('paceCard');
+  if (!card || !launchId) { if (card) card.style.display = 'none'; return; }
+
+  let data;
+  try {
+    const res = await fetch(`/api/launches/${launchId}/pace`);
+    if (!res.ok) throw new Error('no data');
+    data = await res.json();
+  } catch (e) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+
+  // вердикт
+  const vEl = document.getElementById('paceVerdict');
+  const v = data.verdict;
+  if (v) {
+    const map = {
+      ahead:   { txt: `Впереди темпа на +${v.delta}пп`, cls: 'pace-ahead' },
+      behind:  { txt: `Отстаём от темпа на ${v.delta}пп`, cls: 'pace-behind' },
+      ontrack: { txt: `В рамках темпа (${v.delta >= 0 ? '+' : ''}${v.delta}пп)`, cls: 'pace-ontrack' },
+    };
+    const m = map[v.status] || map.ontrack;
+    vEl.textContent = m.txt;
+    vEl.className = `pace-verdict ${m.cls}`;
+    document.getElementById('paceSub').textContent =
+      `День ${v.day}: набрано ${v.target_pct}% плана · среднеисторически к этому дню — ${v.bench_pct}% (по ${data.ref_count} запускам)`;
+  } else {
+    vEl.textContent = '';
+    document.getElementById('paceSub').textContent = `Среднее по ${data.ref_count} запускам`;
+  }
+
+  // график
+  if (paceChart) { paceChart.destroy(); paceChart = null; }
+  const ctx = document.getElementById('paceChart');
+  if (!ctx) return;
+  const labels = data.days.map(d => `Д${d}`);
+  paceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Лучший (история)', data: data.best_curve, borderColor: 'rgba(16,185,129,0.35)',
+          backgroundColor: 'rgba(16,185,129,0.08)', fill: '+1', pointRadius: 0, borderWidth: 1, borderDash: [4,4] },
+        { label: 'Худший (история)', data: data.worst_curve, borderColor: 'rgba(244,63,94,0.35)',
+          backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1, borderDash: [4,4] },
+        { label: 'Средний темп', data: data.avg_curve, borderColor: '#8a8aa3',
+          backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 2, borderDash: [6,3] },
+        { label: data.launch.name, data: data.target_curve, borderColor: '#7C3AED',
+          backgroundColor: 'rgba(124,58,237,0.10)', fill: false, pointRadius: 3, borderWidth: 3, tension: 0.25 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y}% плана` } }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => v + '%' }, title: { display: true, text: '% плана накопл.' } }
+      }
+    }
+  });
 }
 
 document.getElementById('compareLoadBtn')?.addEventListener('click', async () => {
