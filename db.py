@@ -60,6 +60,7 @@ def init_db():
         """)
         for sql in [
             "ALTER TABLE launches ADD COLUMN event_end_date TEXT",
+            "ALTER TABLE launches ADD COLUMN plan_curve_ref INTEGER",
         ]:
             try:
                 conn.execute(sql)
@@ -212,6 +213,16 @@ def set_active_launch(launch_id: int):
         conn.execute("UPDATE launches SET is_active=1 WHERE id=?", (launch_id,))
 
 
+def set_plan_curve_ref(launch_id: int, ref_launch_id):
+    """Set the reference launch whose daily fact shape defines the plan curve.
+    Pass ref_launch_id=None to reset to even distribution."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE launches SET plan_curve_ref=? WHERE id=?",
+            (ref_launch_id, launch_id)
+        )
+
+
 def _cumulative(values):
     result, running = [], 0
     for v in values:
@@ -220,11 +231,161 @@ def _cumulative(values):
     return result
 
 
+def _plan_curve_fractions(conn, ref_launch_id, total_days: int) -> list[float] | None:
+    """Return per-day fractions (summing to 1.0) shaped like the daily fact
+    distribution of a reference launch. None if reference has no usable data."""
+    if not ref_launch_id or total_days <= 0:
+        return None
+    rows = conn.execute(
+        """SELECT day_num, SUM(count) AS total
+           FROM daily_registrations WHERE launch_id=?
+           GROUP BY day_num ORDER BY day_num""",
+        (ref_launch_id,)
+    ).fetchall()
+    if not rows:
+        return None
+    ref_max = max(r["day_num"] for r in rows)
+    ref_daily = [0] * ref_max
+    for r in rows:
+        ref_daily[r["day_num"] - 1] = r["total"] or 0
+    if sum(ref_daily) <= 0:
+        return None
+
+    # Fit reference shape to total_days
+    if len(ref_daily) >= total_days:
+        shape = ref_daily[:total_days]
+    else:
+        avg = sum(ref_daily) / len(ref_daily)
+        shape = ref_daily + [avg] * (total_days - len(ref_daily))
+
+    s = sum(shape)
+    if s <= 0:
+        return None
+    return [x / s for x in shape]
+
+
+def _distribute_plan(ch_plan: int, total_days: int, fractions: list[float] | None) -> list[int]:
+    """Distribute a channel plan across days. By a reference curve if provided,
+    otherwise evenly. Always sums exactly to ch_plan."""
+    if ch_plan <= 0 or total_days <= 0:
+        return [0] * max(total_days, 0)
+    if fractions and len(fractions) == total_days:
+        daily = [int(round(ch_plan * f)) for f in fractions]
+    else:
+        base = ch_plan // total_days
+        daily = [base] * total_days
+    # Fix rounding drift onto the peak day
+    drift = ch_plan - sum(daily)
+    if drift != 0:
+        peak = max(range(total_days), key=lambda i: daily[i]) if any(daily) else total_days - 1
+        daily[peak] += drift
+    return daily
+
+
+def compute_alerts(overview: dict, channels: list, forecast: dict) -> list[dict]:
+    """Self-reading insights. Returns list of {severity, icon, title, text, channel}.
+    severity: 'red' | 'yellow' | 'green'."""
+    alerts = []
+    total_plan     = overview.get("total_plan", 0) or 0
+    days_elapsed   = overview.get("days_elapsed", 0) or 0
+    days_remaining = overview.get("days_remaining", 0) or 0
+    yesterday      = overview.get("yesterday_actual", 0) or 0
+    yest_delta     = overview.get("yesterday_delta", 0) or 0
+    pace_needed    = overview.get("pace_needed", 0) or 0
+
+    # 1. Forecast vs plan (realistic scenario)
+    real = forecast.get("realistic", 0) or 0
+    if total_plan > 0:
+        gap_pct = round((real - total_plan) / total_plan * 100)
+        if real >= total_plan:
+            alerts.append({
+                "severity": "green", "icon": "🎯",
+                "title": "Прогноз выше плана",
+                "text": f"При текущем темпе финал ≈ {real:,} ({gap_pct:+d}% к плану).".replace(",", " "),
+                "channel": "",
+            })
+        elif real >= total_plan * 0.9:
+            alerts.append({
+                "severity": "yellow", "icon": "⚠️",
+                "title": "Прогноз чуть ниже плана",
+                "text": f"Финал ≈ {real:,} ({gap_pct:+d}% к плану). Нужно поднажать.".replace(",", " "),
+                "channel": "",
+            })
+        else:
+            alerts.append({
+                "severity": "red", "icon": "🚨",
+                "title": "Прогноз не дотягивает до плана",
+                "text": f"Финал ≈ {real:,} ({gap_pct:+d}% к плану). Риск недобора.".replace(",", " "),
+                "channel": "",
+            })
+
+    # 2. Pace needed vs yesterday's pace
+    if days_remaining > 0 and pace_needed > 0 and yesterday > 0:
+        if pace_needed > yesterday * 1.3:
+            alerts.append({
+                "severity": "red", "icon": "📈",
+                "title": "Нужно ускоряться",
+                "text": f"Чтобы дойти до плана нужно ~{pace_needed:,}/день, вчера было {yesterday:,}.".replace(",", " "),
+                "channel": "",
+            })
+
+    # 3. Yesterday drop
+    if yest_delta < 0 and yesterday > 0:
+        prev = yesterday - yest_delta
+        if prev > 0 and abs(yest_delta) >= prev * 0.2:
+            drop_pct = round(yest_delta / prev * 100)
+            alerts.append({
+                "severity": "yellow", "icon": "📉",
+                "title": "Вчера просели",
+                "text": f"Вчера {yesterday:,} рег. ({drop_pct}% ко дню до).".replace(",", " "),
+                "channel": "",
+            })
+
+    # 4. Per-channel pace problems
+    for c in channels:
+        if c.get("plan", 0) <= 50:
+            continue
+        ratio = c.get("pace_ratio", 0)
+        if c.get("actual", 0) == 0 and days_elapsed >= 1:
+            alerts.append({
+                "severity": "red", "icon": "🔴",
+                "title": f"Канал «{c['name']}» молчит",
+                "text": "Ни одной регистрации при плане " + f"{c['plan']:,}.".replace(",", " "),
+                "channel": c["name"],
+            })
+        elif 0 < ratio < 0.6:
+            alerts.append({
+                "severity": "red", "icon": "🔴",
+                "title": f"Канал «{c['name']}» тонет",
+                "text": f"Темп {ratio:.0%} от нужного ({c.get('actual',0):,}/{c['plan']:,}).".replace(",", " "),
+                "channel": c["name"],
+            })
+
+    # 5. Top performer (only if we have a clear leader)
+    leaders = sorted(
+        [c for c in channels if c.get("plan", 0) > 50 and c.get("pace_ratio", 0) >= 1.2],
+        key=lambda x: x.get("pace_ratio", 0), reverse=True
+    )
+    if leaders:
+        c = leaders[0]
+        alerts.append({
+            "severity": "green", "icon": "🚀",
+            "title": f"Канал «{c['name']}» в лидерах",
+            "text": f"Темп {c['pace_ratio']:.0%} от плана — перевыполняет.",
+            "channel": c["name"],
+        })
+
+    # Order: red → yellow → green
+    order = {"red": 0, "yellow": 1, "green": 2}
+    alerts.sort(key=lambda a: order.get(a["severity"], 3))
+    return alerts
+
+
 def get_dashboard_from_db(launch_id: int) -> dict:
     """Compute a full dashboard payload from SQLite data only."""
     with get_db() as conn:
         l = conn.execute(
-            "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active FROM launches WHERE id=?",
+            "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active, plan_curve_ref FROM launches WHERE id=?",
             (launch_id,)
         ).fetchone()
         if not l:
@@ -254,6 +415,10 @@ def get_dashboard_from_db(launch_id: int) -> dict:
         yesterday_idx   = days_elapsed - 2   # day before today
         day_before_idx  = days_elapsed - 3   # two days ago
 
+        # Plan curve: shape per-day plan like a reference launch's fact curve
+        plan_fractions = _plan_curve_fractions(conn, l["plan_curve_ref"], total_days)
+        plan_curve_used = plan_fractions is not None
+
         channels = []
         for ch in ch_rows:
             dregs = conn.execute(
@@ -266,15 +431,8 @@ def get_dashboard_from_db(launch_id: int) -> dict:
             total_actual_ch = sum(daily_actual)
             ch_plan = ch["plan"] or 0
 
-            # Even distribution of plan across days
-            if ch_plan > 0 and total_days > 0:
-                base      = ch_plan // total_days
-                remainder = ch_plan % total_days
-                daily_plan = [base] * total_days
-                if remainder:
-                    daily_plan[-1] += remainder
-            else:
-                daily_plan = [0] * total_days
+            # Distribute plan across days (by reference curve, else evenly)
+            daily_plan = _distribute_plan(ch_plan, total_days, plan_fractions)
 
             pct = round(total_actual_ch / ch_plan * 100, 1) if ch_plan > 0 else 0
 
@@ -381,29 +539,46 @@ def get_dashboard_from_db(launch_id: int) -> dict:
             key=lambda x: x["pct"]
         )[:3]
 
+        overview = {
+            "launch_id":        launch_id,
+            "launch_name":      l["name"],
+            "start_date":       str(reg_start),
+            "end_date":         str(reg_end),
+            "event_date":       l["event_date"],
+            "event_end_date":   l["event_end_date"],
+            "total_plan":       total_plan,
+            "total_actual":     total_actual,
+            "completion_pct":   completion_pct,
+            "days_elapsed":     days_elapsed,
+            "days_total":       total_days,
+            "days_remaining":   days_remaining,
+            "today_actual":     today_actual,
+            "today_plan":       today_plan,
+            "today_pct":        today_pct,
+            "yesterday_actual": yesterday_actual,
+            "yesterday_delta":  yesterday_delta,
+            "pace_needed":      pace_needed,
+            "plan_curve_used":  plan_curve_used,
+            "plan_curve_ref":   l["plan_curve_ref"],
+            "last_updated":     datetime.now().isoformat(),
+            "_source":          "db",
+        }
+
+        forecast = {
+            "projected_total":    projected_total,
+            "projected_pct":      projected_pct,
+            "confidence":         confidence,
+            "pessimistic":        proj_pessimistic,
+            "realistic":          proj_realistic,
+            "optimistic":         proj_optimistic,
+            "pessimistic_pct":    round(proj_pessimistic / total_plan * 100, 1) if total_plan > 0 else 0,
+            "optimistic_pct":     round(proj_optimistic  / total_plan * 100, 1) if total_plan > 0 else 0,
+            "cumulative_forecast": forecast_cum,
+            "cumulative_plan":    _cumulative(daily_plan_list),
+        }
+
         return {
-            "overview": {
-                "launch_id":        launch_id,
-                "launch_name":      l["name"],
-                "start_date":       str(reg_start),
-                "end_date":         str(reg_end),
-                "event_date":       l["event_date"],
-                "event_end_date":   l["event_end_date"],
-                "total_plan":       total_plan,
-                "total_actual":     total_actual,
-                "completion_pct":   completion_pct,
-                "days_elapsed":     days_elapsed,
-                "days_total":       total_days,
-                "days_remaining":   days_remaining,
-                "today_actual":     today_actual,
-                "today_plan":       today_plan,
-                "today_pct":        today_pct,
-                "yesterday_actual": yesterday_actual,
-                "yesterday_delta":  yesterday_delta,
-                "pace_needed":      pace_needed,
-                "last_updated":     datetime.now().isoformat(),
-                "_source":          "db",
-            },
+            "overview": overview,
             "daily": {
                 "dates":             day_dates,
                 "daily_actual":      daily_total_actual,
@@ -412,18 +587,8 @@ def get_dashboard_from_db(launch_id: int) -> dict:
                 "cumulative_plan":   _cumulative(daily_plan_list),
             },
             "channels": channels,
-            "forecast": {
-                "projected_total":    projected_total,
-                "projected_pct":      projected_pct,
-                "confidence":         confidence,
-                "pessimistic":        proj_pessimistic,
-                "realistic":          proj_realistic,
-                "optimistic":         proj_optimistic,
-                "pessimistic_pct":    round(proj_pessimistic / total_plan * 100, 1) if total_plan > 0 else 0,
-                "optimistic_pct":     round(proj_optimistic  / total_plan * 100, 1) if total_plan > 0 else 0,
-                "cumulative_forecast": forecast_cum,
-                "cumulative_plan":    _cumulative(daily_plan_list),
-            },
+            "forecast": forecast,
+            "alerts":   compute_alerts(overview, channels, forecast),
             "best_channels": [{"name": c["name"], "pct": c["pct"], "actual": c["actual"]} for c in best_channels],
             "lag_channels":  [{"name": c["name"], "pct": c["pct"], "plan": c["plan"], "actual": c["actual"]} for c in lag_channels],
         }

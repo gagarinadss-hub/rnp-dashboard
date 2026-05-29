@@ -113,6 +113,9 @@
           </div>
         </div>
 
+        <!-- Alerts feed -->
+        <div class="alerts-feed" id="alertsFeed"></div>
+
         <!-- KPI row -->
         <div class="kpi-grid kpi-grid-5">
           <div class="kpi-card">
@@ -165,10 +168,18 @@
           <div class="card chart-main-card">
             <div class="card-head">
               <h3>Динамика регистраций по дням</h3>
-              <div class="chart-legend">
-                <span><span class="dot" style="background:#7C3AED"></span>Факт</span>
-                <span><span class="dot" style="background:#C4B5FD"></span>План</span>
-                <span><span class="dot" style="background:#EC4899"></span>Прогноз</span>
+              <div class="chart-head-right">
+                <label class="curve-select-wrap" title="Форма плана по дням: равномерно или по кривой реального прошлого запуска">
+                  <span>База плана:</span>
+                  <select id="planCurveSelect" class="curve-select">
+                    <option value="">равномерно</option>
+                  </select>
+                </label>
+                <div class="chart-legend">
+                  <span><span class="dot" style="background:#7C3AED"></span>Факт</span>
+                  <span><span class="dot" style="background:#C4B5FD"></span>План</span>
+                  <span><span class="dot" style="background:#EC4899"></span>Прогноз</span>
+                </div>
               </div>
             </div>
             <canvas id="mainChart" height="120"></canvas>

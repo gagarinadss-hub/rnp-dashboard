@@ -251,6 +251,12 @@ function renderDashboard() {
         </div>`).join('')
     : '<div class="insight-empty">Нет данных</div>';
 
+  // ── Alerts feed ──────────────────────────────────────────────────────────
+  renderAlerts(dashState.alerts || []);
+
+  // ── Plan-curve selector ──────────────────────────────────────────────────
+  renderPlanCurveSelect(o);
+
   // ── Charts ─────────────────────────────────────────────────────────────
   renderMainChart(d, f, o);
   renderDonutChart(dashState.channels || []);
@@ -258,6 +264,74 @@ function renderDashboard() {
   // ── Channels table (dashboard quick view) ──────────────────────────────
   renderChannelTable(document.getElementById('chSearch').value);
 }
+
+// ── Alerts feed ──────────────────────────────────────────────────────────────
+function renderAlerts(alerts) {
+  const feed = document.getElementById('alertsFeed');
+  if (!feed) return;
+  if (!alerts || !alerts.length) {
+    feed.innerHTML = '';
+    feed.style.display = 'none';
+    return;
+  }
+  feed.style.display = '';
+  feed.innerHTML = alerts.map(a => `
+    <div class="alert-card alert-${a.severity}">
+      <span class="alert-icon">${a.icon || ''}</span>
+      <div class="alert-body">
+        <div class="alert-title">${a.title || ''}</div>
+        <div class="alert-text">${a.text || ''}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Plan-curve selector ───────────────────────────────────────────────────────
+function renderPlanCurveSelect(o) {
+  const sel = document.getElementById('planCurveSelect');
+  if (!sel) return;
+
+  // Only meaningful for DB launches (curve is stored per launch)
+  if (!isDbSource()) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">равномерно</option>';
+    return;
+  }
+  sel.disabled = false;
+
+  const currentId = o.launch_id;
+  const curRef    = o.plan_curve_ref ?? '';
+
+  let opts = '<option value="">равномерно</option>';
+  (allLaunches || []).forEach(l => {
+    if (l.id === currentId) return;                 // can't base on itself
+    if (!(l.total_actual > 0)) return;              // need real fact to shape a curve
+    const selAttr = String(l.id) === String(curRef) ? ' selected' : '';
+    opts += `<option value="${l.id}"${selAttr}>${l.name}</option>`;
+  });
+  sel.innerHTML = opts;
+}
+
+document.getElementById('planCurveSelect')?.addEventListener('change', async e => {
+  const launchId = dashState?.overview?.launch_id;
+  if (!launchId) return;
+  const refVal = e.target.value ? parseInt(e.target.value, 10) : null;
+  e.target.disabled = true;
+  try {
+    await fetch(`/api/launches/${launchId}/plan-curve`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref_launch_id: refVal }),
+    });
+    await loadDashboard();
+    if (document.querySelector('.nav-item[data-tab="channels"]')?.classList.contains('active')) {
+      renderChannelsTab();
+    }
+  } catch (err) {
+    console.error('Ошибка смены базы плана:', err);
+  } finally {
+    e.target.disabled = false;
+  }
+});
 
 // ── Main Chart ─────────────────────────────────────────────────────────────
 function renderMainChart(d, f, o) {

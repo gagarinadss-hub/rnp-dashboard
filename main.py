@@ -238,6 +238,15 @@ def activate_launch(launch_id: int):
     return {"status": "ok"}
 
 
+@app.put("/api/launches/{launch_id}/plan-curve")
+def set_plan_curve(launch_id: int, body: dict):
+    """Set reference launch for plan-curve shaping. ref_launch_id=null resets to even."""
+    from db import set_plan_curve_ref
+    ref = body.get("ref_launch_id")
+    set_plan_curve_ref(launch_id, ref if ref else None)
+    return {"status": "ok", "launch_id": launch_id, "plan_curve_ref": ref}
+
+
 @app.get("/api/launches/{launch_id}/comments")
 def get_comments(launch_id: int):
     from db import get_comments
