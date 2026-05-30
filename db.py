@@ -706,6 +706,54 @@ def get_comparison_data(launch_id: int, ref_launch_id: int) -> dict:
         }
 
 
+def _pdate(s):
+    """Безопасный разбор ISO-даты. None при пустом/битом значении."""
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+# Потолок длины окна регистрации (дни). Защищает от битых дат мероприятия,
+# из-за которых ось бенчмарка растягивалась на 100+ дней.
+MAX_REG_SPAN = 45
+
+
+def reg_window_span(row):
+    """Длина окна учёта регистраций в днях.
+
+    Регистрации считаются от reg_start до ПОСЛЕДНЕГО дня мероприятия
+    (event_end_date, иначе event_date). Пример: рег. стартовали 22.05,
+    мероприятие 27–28.05 → последний день учёта 28.05 → окно 7 дней.
+
+    Даты мероприятия в части запусков битые (месяцы мимо, конец раньше
+    начала), поэтому: берём только валидные даты (>= reg_start), при их
+    отсутствии откатываемся на reg_end, и в любом случае ограничиваем
+    окно сверху MAX_REG_SPAN. Возвращает span (int) или None, если нет
+    даже reg_start.
+    """
+    rs = _pdate(row["reg_start"])
+    if not rs:
+        return None
+    # последний день мероприятия среди валидных дат
+    ends = [d for d in (_pdate(row["event_end_date"]), _pdate(row["event_date"]))
+            if d and d >= rs]
+    end = max(ends) if ends else None
+    if end:
+        span = (end - rs).days + 1
+        if 1 <= span <= MAX_REG_SPAN:
+            return span
+    # запасной вариант — заявленный конец окна регистрации
+    re_ = _pdate(row["reg_end"])
+    if re_ and re_ >= rs:
+        span = (re_ - rs).days + 1
+        if 1 <= span <= MAX_REG_SPAN:
+            return span
+    return MAX_REG_SPAN  # жёсткий потолок, если все даты непригодны
+
+
 def get_pace_benchmark(launch_id: int) -> dict:
     """Темп текущего запуска vs среднеисторический.
     На каждый день N: какую долю плана (%) набрал запуск к этому дню.
@@ -713,12 +761,16 @@ def get_pace_benchmark(launch_id: int) -> dict:
     Плюс огибающая лучший/худший. Вердикт на текущий день."""
     with get_db() as conn:
         target = conn.execute(
-            "SELECT id, name, total_plan, is_active FROM launches WHERE id=?", (launch_id,)
+            "SELECT id, name, total_plan, is_active, reg_start, reg_end, event_date, event_end_date "
+            "FROM launches WHERE id=?", (launch_id,)
         ).fetchone()
         if not target or not target["total_plan"]:
             return None
 
-        def _cum_pct_curve(lid, plan):
+        def _cum_pct_curve(lid, plan, span):
+            """Накопленный % плана по дням. Регистрации за пределами окна
+            (day_num > span) — единичные поздние «хвосты», их отбрасываем,
+            иначе ось дней растягивается на 100+ дней из-за пары запоздавших."""
             rows = conn.execute(
                 """SELECT day_num, SUM(count) AS total
                    FROM daily_registrations WHERE launch_id=?
@@ -726,8 +778,10 @@ def get_pace_benchmark(launch_id: int) -> dict:
             ).fetchall()
             if not rows or plan <= 0:
                 return []
-            max_day = max(r["day_num"] for r in rows)
             daily = {r["day_num"]: r["total"] for r in rows}
+            data_max = max(r["day_num"] for r in rows)
+            # верхняя граница = окно регистрации (если известно), иначе все данные
+            max_day = min(data_max, span) if span else data_max
             running = 0
             curve = []
             for d in range(1, max_day + 1):
@@ -735,15 +789,17 @@ def get_pace_benchmark(launch_id: int) -> dict:
                 curve.append(round(running / plan * 100, 1))
             return curve
 
-        target_curve = _cum_pct_curve(launch_id, target["total_plan"])
+        target_span = reg_window_span(target)
+        target_curve = _cum_pct_curve(launch_id, target["total_plan"], target_span)
 
         others = conn.execute(
-            "SELECT id, total_plan FROM launches WHERE id != ? AND total_plan > 0",
+            "SELECT id, total_plan, reg_start, reg_end, event_date, event_end_date "
+            "FROM launches WHERE id != ? AND total_plan > 0",
             (launch_id,)
         ).fetchall()
         ref_curves = []
         for o in others:
-            c = _cum_pct_curve(o["id"], o["total_plan"])
+            c = _cum_pct_curve(o["id"], o["total_plan"], reg_window_span(o))
             if len(c) >= 3:                       # только осмысленные кривые
                 ref_curves.append(c)
 
