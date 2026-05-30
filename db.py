@@ -463,9 +463,14 @@ def get_dashboard_from_db(launch_id: int) -> dict:
         reg_start = date.fromisoformat(l["reg_start"]) if l["reg_start"] else today - timedelta(days=6)
         reg_end   = date.fromisoformat(l["reg_end"])   if l["reg_end"]   else today
 
-        total_days     = max(1, (reg_end - reg_start).days + 1)
+        # Окно учёта регистраций: от reg_start до ПОСЛЕДНЕГО дня мероприятия
+        # (event_end_date, иначе event_date), с откатом на reg_end и потолком
+        # MAX_REG_SPAN. То же правило, что и в бенчмарке темпа.
+        span = reg_window_span(l)
+        total_days     = span if span else max(1, (reg_end - reg_start).days + 1)
+        window_end     = reg_start + timedelta(days=total_days - 1)
         days_elapsed   = max(1, min((today - reg_start).days + 1, total_days))
-        days_remaining = max(0, (reg_end - today).days)
+        days_remaining = max(0, (window_end - today).days)
 
         day_dates = [str(reg_start + timedelta(days=i)) for i in range(total_days)]
 
@@ -611,7 +616,7 @@ def get_dashboard_from_db(launch_id: int) -> dict:
             "launch_id":        launch_id,
             "launch_name":      l["name"],
             "start_date":       str(reg_start),
-            "end_date":         str(reg_end),
+            "end_date":         str(window_end),
             "event_date":       l["event_date"],
             "event_end_date":   l["event_end_date"],
             "total_plan":       total_plan,
