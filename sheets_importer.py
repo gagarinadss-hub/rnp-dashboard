@@ -28,6 +28,8 @@ _EXTRA = {
     'curators': 'Кураторы',
     'students': 'Студенты',
     'gk':       'Геткурс',
+    'gc':       'Геткурс',              # GetCourse: в данных метка 'gc', не 'gk'
+    'tgp':      'ТГ-посевы (Дмитрий)',  # ТГ-посевы: ссылки poreg_tgp_bars_* через MAX-бот
 }
 
 # ── State ──────────────────────────────────────────────────────────────────
@@ -107,13 +109,13 @@ def _resolve(src: str, med: str, trigger: str, platform: str, mapping: dict, db_
     if (s, m) in mapping:
         ch = mapping[(s, m)]
         # If this source can come from MAX, add suffix
-        if p == 'MAX' and s in ('tgc', 'tgb', 'tgp'):
+        if p == 'MAX' and s in ('tgc', 'tgb'):
             return _platform_channel(ch, p)
         return ch
     # 4. Справочник source-only
     if (s, '') in mapping:
         ch = mapping[(s, '')]
-        if p == 'MAX' and s in ('tgc', 'tgb', 'tgp'):
+        if p == 'MAX' and s in ('tgc', 'tgb'):
             return _platform_channel(ch, p)
         return ch
 
@@ -122,11 +124,10 @@ def _resolve(src: str, med: str, trigger: str, platform: str, mapping: dict, db_
         return _EXTRA[s]
 
     # 6. Platform-aware fallbacks
+    #    tgp (ТГ-посевы) обрабатывается выше в _EXTRA — сюда не доходит.
     if s == 'tgb':
         return 'МАХ Дима' if p == 'MAX' else 'ТГ Боты Димы'
     if s == 'tgc':
-        return 'МАХ Дима' if p == 'MAX' else 'ТГ Канал Димы'
-    if s == 'tgp':
         return 'МАХ Дима' if p == 'MAX' else 'ТГ Канал Димы'
     if s == 'vk':    return 'ВК (посты+рассылки)'
     if s == 'email': return 'Email'
