@@ -313,6 +313,48 @@ def update_launch_endpoint(launch_id: int, body: dict):
     return {"status": "ok", **result}
 
 
+@app.post("/api/launches/{launch_id}/snapshot-live")
+def snapshot_live(launch_id: int):
+    """Перезаписать факты запуска точными числами из живого Справочника.
+    Берём только если окно живого листа пересекается с окном запуска —
+    иначе можно занести чужое событие."""
+    from db import get_launch_detail, snapshot_live_channels
+    if DEMO_MODE:
+        raise HTTPException(400, "Демо-режим: живой Справочник недоступен")
+    det = get_launch_detail(launch_id)
+    if not det:
+        raise HTTPException(404, "Launch not found")
+    try:
+        data = get_data()
+    except Exception as e:
+        raise HTTPException(502, f"Живой Справочник недоступен: {e}")
+    ov = data.get("overview", {})
+    if ov.get("_source") not in ("live", "cache"):
+        raise HTTPException(502, "Живой Справочник недоступен (демо/нет данных)")
+    o = det["overview"]
+    if not _ranges_overlap(o.get("reg_start"), o.get("reg_end"),
+                           ov.get("start_date"), ov.get("end_date")):
+        raise HTTPException(
+            409,
+            f"Окно живого листа {ov.get('start_date')}..{ov.get('end_date')} не "
+            f"совпадает с запуском {o.get('reg_start')}..{o.get('reg_end')} — отказ")
+    channels = data.get("channels", [])
+    result = snapshot_live_channels(launch_id, channels)
+    return {"status": "ok", "source_window": f"{ov.get('start_date')}..{ov.get('end_date')}", **result}
+
+
+@app.delete("/api/launches/{launch_id}")
+def delete_launch_endpoint(launch_id: int):
+    """Удалить запуск со всеми связанными данными."""
+    from db import delete_launch, get_active_launch_id
+    if get_active_launch_id() == launch_id:
+        raise HTTPException(400, "Нельзя удалить активный запуск")
+    result = delete_launch(launch_id)
+    if result is None:
+        raise HTTPException(404, "Launch not found")
+    return {"status": "ok", **result}
+
+
 @app.post("/api/launches/{launch_id}/activate")
 def activate_launch(launch_id: int):
     from db import set_active_launch

@@ -267,6 +267,75 @@ def set_daily_fact(launch_id: int, channel_name: str, day_num: int, fact: int):
         return ch_id
 
 
+def snapshot_live_channels(launch_id: int, live_channels: list) -> dict:
+    """Перезаписать факты запуска точными числами из живого Справочника.
+
+    Удаляет все daily_registrations запуска и записывает дневную разбивку
+    каждого канала из live (по позиции дня). План/комментарии/задачи не
+    трогаются. Каналы, которых нет в launch_channels, привязываются с планом 0.
+    live_channels: list of {"name", "actual", "daily_actual": [...]}.
+    """
+    written, channels_touched = 0, 0
+    with get_db() as conn:
+        conn.execute("DELETE FROM daily_registrations WHERE launch_id=?", (launch_id,))
+        for ch in live_channels:
+            name = (ch.get("name") or "").strip()
+            if not name:
+                continue
+            ch_id = upsert_channel(conn, name)
+            conn.execute(
+                "INSERT OR IGNORE INTO launch_channels(launch_id, channel_id, plan) VALUES(?,?,0)",
+                (launch_id, ch_id)
+            )
+            channels_touched += 1
+            daily = ch.get("daily_actual") or []
+            # Авторитетный итог канала — ch["actual"] из Справочника. Дневную
+            # форму берём из daily_actual, но масштабируем к точному итогу
+            # (DataProcessor округляет дни вниз и теряет ~8% — здесь чиним).
+            target = int(round(ch.get("actual", 0) or 0))
+            dsum = sum(daily)
+            if daily and dsum > 0 and target > 0:
+                scaled = [int(round(x * target / dsum)) for x in daily]
+                drift = target - sum(scaled)
+                if scaled:
+                    mi = max(range(len(scaled)), key=lambda k: scaled[k])
+                    scaled[mi] += drift
+                for i, c in enumerate(scaled):
+                    if c:
+                        conn.execute(
+                            """INSERT INTO daily_registrations(launch_id, channel_id, day_num, count)
+                               VALUES(?,?,?,?)
+                               ON CONFLICT(launch_id, channel_id, day_num)
+                               DO UPDATE SET count=excluded.count""",
+                            (launch_id, ch_id, i + 1, int(c))
+                        )
+                        written += 1
+            elif target:
+                conn.execute(
+                    """INSERT INTO daily_registrations(launch_id, channel_id, day_num, count)
+                       VALUES(?,?,1,?)
+                       ON CONFLICT(launch_id, channel_id, day_num)
+                       DO UPDATE SET count=excluded.count""",
+                    (launch_id, ch_id, target)
+                )
+                written += 1
+    return {"launch_id": launch_id, "channels": channels_touched, "rows_written": written}
+
+
+def delete_launch(launch_id: int) -> dict | None:
+    """Полностью удалить запуск и все связанные данные. None — если не найден."""
+    with get_db() as conn:
+        row = conn.execute("SELECT id, name FROM launches WHERE id=?", (launch_id,)).fetchone()
+        if not row:
+            return None
+        name = row["name"]
+        for tbl in ("daily_registrations", "launch_channels", "channel_comments",
+                    "channel_tasks", "utm_label_stats", "unmatched_labels"):
+            conn.execute(f"DELETE FROM {tbl} WHERE launch_id=?", (launch_id,))
+        conn.execute("DELETE FROM launches WHERE id=?", (launch_id,))
+        return {"deleted_id": launch_id, "name": name}
+
+
 def get_active_launch_id():
     with get_db() as conn:
         row = conn.execute(
