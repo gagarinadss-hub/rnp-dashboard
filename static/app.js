@@ -184,9 +184,6 @@ function renderDashboard() {
     ? `× ${o.days_remaining} дн. до плана`
     : 'план выполнен';
 
-  // ── Alerts feed ──────────────────────────────────────────────────────────
-  renderAlerts(dashState.alerts || []);
-
   // ── Plan-curve selector ──────────────────────────────────────────────────
   renderPlanCurveSelect(o);
 
@@ -229,26 +226,6 @@ function renderTopChannels(filter) {
         </div>
       </div>`;
   }).join('');
-}
-
-// ── Alerts feed ──────────────────────────────────────────────────────────────
-function renderAlerts(alerts) {
-  const feed = document.getElementById('alertsFeed');
-  if (!feed) return;
-  if (!alerts || !alerts.length) {
-    feed.innerHTML = '';
-    feed.style.display = 'none';
-    return;
-  }
-  feed.style.display = '';
-  feed.innerHTML = alerts.map(a => `
-    <div class="alert-card alert-${a.severity}">
-      <span class="alert-icon">${a.icon || ''}</span>
-      <div class="alert-body">
-        <div class="alert-title">${a.title || ''}</div>
-        <div class="alert-text">${a.text || ''}</div>
-      </div>
-    </div>`).join('');
 }
 
 // ── Plan-curve selector ───────────────────────────────────────────────────────
