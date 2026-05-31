@@ -207,19 +207,48 @@ def channel_history(channel_name: str):
     return data
 
 
+def _ranges_overlap(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
+    """Пересекаются ли два диапазона ISO-дат. Любой битый вход → False."""
+    from datetime import date
+    try:
+        as_, ae = date.fromisoformat(a_start), date.fromisoformat(a_end)
+        bs, be = date.fromisoformat(b_start), date.fromisoformat(b_end)
+    except Exception:
+        return False
+    return as_ <= be and bs <= ae
+
+
 def _live_override_for(launch_id: int) -> dict | None:
     """Для активного запуска тянет доверенные числа каналов из живого
-    Справочника. None — если запуск не активен, демо-режим или Sheets недоступен
-    (тогда дашборд считается по БД, как раньше)."""
+    Справочника. None — если запуск не активен, демо-режим, Sheets недоступен
+    ИЛИ живой лист относится к другому событию (окна дат не пересекаются) —
+    тогда дашборд считается по БД, как раньше."""
     if DEMO_MODE:
         return None
-    from db import get_active_launch_id
+    from db import get_active_launch_id, get_launch_detail
     if get_active_launch_id() != launch_id:
         return None
     try:
         data = get_data()
-        if data.get("overview", {}).get("_source") not in ("live", "cache"):
+        ov = data.get("overview", {})
+        if ov.get("_source") not in ("live", "cache"):
             return None
+
+        # ── ЗАЩИТА: живой Справочник должен относиться к ЭТОМУ запуску ──────
+        # Сверяем окно дат живого листа с окном активного запуска. Если они
+        # не пересекаются — лист ещё на другом (прошлом) событии, и брать из
+        # него числа нельзя (иначе на активный запуск попадут чужие данные).
+        det = get_launch_detail(launch_id) or {}
+        ovd = det.get("overview", det)
+        l_start = ovd.get("reg_start") or ovd.get("start_date")
+        l_end   = ovd.get("reg_end")   or ovd.get("end_date")
+        if not (l_start and l_end and ov.get("start_date") and ov.get("end_date")
+                and _ranges_overlap(l_start, l_end, ov["start_date"], ov["end_date"])):
+            log.warning(
+                f"[live_override] окно живого листа {ov.get('start_date')}..{ov.get('end_date')} "
+                f"не совпадает с запуском {l_start}..{l_end} — беру данные из БД")
+            return None
+
         channels = data.get("channels", [])
         daily    = data.get("daily", {})
         ch_actuals = {c["name"]: c["actual"] for c in channels if c.get("name")}
