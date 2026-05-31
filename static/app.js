@@ -9,7 +9,7 @@ let charts        = {};
 
 // ── Palette ────────────────────────────────────────────────────────────────
 const PALETTE = [
-  '#7C3AED','#A855F7','#EC4899','#F97316','#EAB308',
+  '#A8D91E','#5B8DEF','#17191F','#F97316','#EAB308',
   '#10B981','#3B82F6','#06B6D4','#84CC16','#F43F5E',
 ];
 
@@ -292,32 +292,32 @@ function renderMainChart(d, f, o) {
       datasets: [
         {
           type: 'bar', label: 'Факт (ежедн.)',
-          data: d.daily_actual, backgroundColor: '#7C3AED',
+          data: d.daily_actual, backgroundColor: '#B6E029',
           borderRadius: 6, order: 3,
         },
         {
           type: 'bar', label: 'План (ежедн.)',
-          data: d.daily_plan, backgroundColor: '#C4B5FD',
+          data: d.daily_plan, backgroundColor: '#CBD8EE',
           borderRadius: 6, order: 4,
         },
         {
           type: 'line', label: 'Факт (накопл.)',
           data: d.cumulative_actual,
-          borderColor: '#EC4899', backgroundColor: 'rgba(236,72,153,0.07)',
+          borderColor: '#17191F', backgroundColor: 'rgba(23,25,31,0.05)',
           fill: true, tension: 0.4, pointRadius: 4, borderWidth: 2.5,
           order: 1, yAxisID: 'y2',
         },
         {
           type: 'line', label: 'Прогноз (накопл.)',
           data: f.cumulative_forecast,
-          borderColor: '#F97316', borderDash: [5, 4],
+          borderColor: '#5B8DEF', borderDash: [5, 4],
           fill: false, tension: 0.4, pointRadius: 3, borderWidth: 2,
           order: 2, yAxisID: 'y2',
         },
         {
           type: 'line', label: 'План (накопл.)',
           data: f.cumulative_plan,
-          borderColor: '#A78BFA', borderDash: [3, 3],
+          borderColor: '#C2C7D0', borderDash: [3, 3],
           fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
           order: 2, yAxisID: 'y2',
         },
@@ -796,7 +796,7 @@ async function showLaunchDetail(id) {
         datasets: [{
           label: 'Регистрации',
           data: data.daily_total,
-          backgroundColor: '#7C3AED',
+          backgroundColor: '#A8D91E',
           borderRadius: 6,
         }],
       },
@@ -1396,8 +1396,8 @@ async function renderPaceBenchmark(launchId) {
           backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1, borderDash: [4,4] },
         { label: 'Средний темп', data: data.avg_curve, borderColor: '#8a8aa3',
           backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 2, borderDash: [6,3] },
-        { label: data.launch.name, data: data.target_curve, borderColor: '#7C3AED',
-          backgroundColor: 'rgba(124,58,237,0.10)', fill: false, pointRadius: 3, borderWidth: 3, tension: 0.25 },
+        { label: data.launch.name, data: data.target_curve, borderColor: '#17191F',
+          backgroundColor: 'rgba(20,22,40,0.10)', fill: false, pointRadius: 3, borderWidth: 3, tension: 0.25 },
       ]
     },
     options: {
@@ -1460,8 +1460,8 @@ document.getElementById('compareLoadBtn')?.addEventListener('click', async () =>
 
     // Legend
     document.getElementById('compareLegend').innerHTML = `
-      <span><span class="dot" style="background:#7C3AED"></span>${data.launch.name}</span>
-      <span><span class="dot" style="background:#EC4899"></span>${data.reference.name}</span>
+      <span><span class="dot" style="background:#17191F"></span>${data.launch.name}</span>
+      <span><span class="dot" style="background:#5B8DEF"></span>${data.reference.name}</span>
     `;
 
     // Chart
@@ -1475,13 +1475,13 @@ document.getElementById('compareLoadBtn')?.addEventListener('click', async () =>
           {
             label: data.launch.name,
             data: data.main_cumulative,
-            borderColor: '#7C3AED', backgroundColor: 'rgba(124,58,237,0.07)',
+            borderColor: '#17191F', backgroundColor: 'rgba(20,22,40,0.07)',
             fill: true, tension: 0.4, pointRadius: 4, borderWidth: 2.5,
           },
           {
             label: data.reference.name,
             data: data.ref_cumulative,
-            borderColor: '#EC4899', borderDash: [5, 4],
+            borderColor: '#5B8DEF', borderDash: [5, 4],
             fill: false, tension: 0.4, pointRadius: 4, borderWidth: 2,
           },
         ],
