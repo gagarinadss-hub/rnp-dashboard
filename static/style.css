@@ -235,11 +235,11 @@ header {
 
 /* ── Hero Card ────────────────────────────────────────────────────────── */
 .hero-card {
-  background: linear-gradient(135deg, #1B1E26 0%, #14161C 100%);
+  background: linear-gradient(135deg, #EAF9C2 0%, #D7F291 100%);
   border-radius: var(--radius);
   padding: 28px 32px;
-  color: #fff;
-  box-shadow: 0 10px 30px rgba(20,22,40,0.18);
+  color: var(--ink);
+  box-shadow: 0 10px 30px rgba(120,158,18,0.16);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -263,21 +263,21 @@ header {
 .hero-divider {
   width: 1px;
   height: 48px;
-  background: rgba(255,255,255,0.3);
+  background: rgba(20,22,40,0.18);
 }
 .hero-progress-wrap { width: 100%; }
 .hero-progress-bar {
-  background: rgba(255,255,255,0.25);
+  background: rgba(20,22,40,0.10);
   border-radius: 99px;
   height: 10px;
   overflow: hidden;
 }
 .hero-progress-fill {
-  background: var(--lime);
+  background: var(--ink);
   border-radius: 99px;
   height: 100%;
   transition: width 0.8s cubic-bezier(.4,0,.2,1);
-  box-shadow: 0 0 14px rgba(200,242,60,0.55);
+  box-shadow: 0 0 10px rgba(20,22,40,0.25);
 }
 .hero-progress-labels {
   display: flex;
@@ -1333,8 +1333,8 @@ thead .ch-grid-sticky { z-index: 4; }
   margin-top: 9px;
   padding: 4px 12px;
   border-radius: 999px;
-  background: var(--lime);
-  color: var(--ink);
+  background: var(--ink);
+  color: #fff;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: .1px;
@@ -1353,12 +1353,12 @@ thead .ch-grid-sticky { z-index: 4; }
 .hero-stat { text-align: center; padding: 0 22px; }
 .hero-stat:first-child { padding-left: 0; }
 .hero-stat-value { font-size: 30px; font-weight: 800; line-height: 1; }
-.hero-stat:first-child .hero-stat-value { color: var(--lime); }
-.hero-stat-label { font-size: 12px; opacity: 0.75; margin-top: 4px; }
+.hero-stat:first-child .hero-stat-value { color: var(--lime-deep); }
+.hero-stat-label { font-size: 12px; opacity: 0.7; margin-top: 4px; }
 .hero-stat-divider {
   width: 1px;
   height: 40px;
-  background: rgba(255,255,255,0.3);
+  background: rgba(20,22,40,0.18);
   flex-shrink: 0;
 }
 
@@ -1379,7 +1379,7 @@ thead .ch-grid-sticky { z-index: 4; }
 }
 .kpi-icon svg { width: 19px; height: 19px; display: block; }
 .kpi-card--today .kpi-icon { background: rgba(0,0,0,0.10); color: var(--ink); }
-.hero-emoji svg { width: 30px; height: 30px; display: block; color: var(--lime); }
+.hero-emoji svg { width: 30px; height: 30px; display: block; color: var(--ink); }
 .card-head h3 svg, .tab-subtitle svg, .channels-tab-header h2 svg,
 .utm-tab-header h2 svg { width: 17px; height: 17px; vertical-align: -3px; margin-right: 4px; }
 
