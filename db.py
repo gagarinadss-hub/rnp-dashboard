@@ -73,6 +73,7 @@ def init_db():
         for sql in [
             "ALTER TABLE launches ADD COLUMN event_end_date TEXT",
             "ALTER TABLE launches ADD COLUMN plan_curve_ref INTEGER",
+            "ALTER TABLE launches ADD COLUMN plan_curve_manual TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -360,6 +361,48 @@ def set_plan_curve_ref(launch_id: int, ref_launch_id):
         )
 
 
+def set_plan_curve_manual(launch_id: int, weights):
+    """Store a manual per-day plan curve as JSON weights (any positive numbers —
+    they are normalised at render time). Pass None/empty to clear and fall back
+    to reference/history. Setting a manual curve also clears plan_curve_ref so
+    the manual split wins unambiguously."""
+    import json
+    if weights:
+        nums = [float(w) for w in weights if w is not None]
+        nums = [w for w in nums if w >= 0]
+        payload = json.dumps(nums) if nums and sum(nums) > 0 else None
+    else:
+        payload = None
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE launches SET plan_curve_manual=?, plan_curve_ref=NULL WHERE id=?",
+            (payload, launch_id)
+        )
+
+
+def _manual_day_fractions(raw_json, total_days: int) -> list[float] | None:
+    """Parse stored manual weights into per-day fractions summing to 1.0,
+    fitted to total_days. Returns None if unusable."""
+    if not raw_json or total_days <= 0:
+        return None
+    import json
+    try:
+        weights = [float(w) for w in json.loads(raw_json)]
+    except Exception:
+        return None
+    if not weights or sum(weights) <= 0:
+        return None
+    # Fit to total_days: truncate if longer, pad tail with 0 if shorter
+    if len(weights) >= total_days:
+        shape = weights[:total_days]
+    else:
+        shape = weights + [0.0] * (total_days - len(weights))
+    s = sum(shape)
+    if s <= 0:
+        return None
+    return [w / s for w in shape]
+
+
 def _cumulative(values):
     result, running = [], 0
     for v in values:
@@ -611,7 +654,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
     live_daily_map   = (live_override or {}).get("daily_actuals") or {}
     with get_db() as conn:
         l = conn.execute(
-            "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active, plan_curve_ref FROM launches WHERE id=?",
+            "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active, plan_curve_ref, plan_curve_manual FROM launches WHERE id=?",
             (launch_id,)
         ).fetchone()
         if not l:
@@ -668,12 +711,20 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         day_before_idx  = days_elapsed - 3   # two days ago
 
         # Кривая плана по дням:
+        #  • если задана ручная кривая (plan_curve_manual) — она в приоритете;
         #  • если выбрана явная «База плана» (plan_curve_ref) — форма того запуска;
         #  • иначе по умолчанию — усреднённая динамика последних 5 запусков
         #    (план каждого канала и общий план раскидываются по этой кривой,
         #     поэтому сумма по каналам = план на день).
-        if l["plan_curve_ref"]:
+        manual_keys = l.keys() if hasattr(l, "keys") else []
+        manual_raw  = l["plan_curve_manual"] if "plan_curve_manual" in manual_keys else None
+        plan_curve_mode = "history"
+        plan_fractions  = _manual_day_fractions(manual_raw, total_days)
+        if plan_fractions is not None:
+            plan_curve_mode = "manual"
+        elif l["plan_curve_ref"]:
             plan_fractions = _plan_curve_fractions(conn, l["plan_curve_ref"], total_days)
+            plan_curve_mode = "reference"
         else:
             plan_fractions = _history_day_fractions(conn, total_days, launch_id, n=5)
         plan_curve_used = plan_fractions is not None
@@ -889,6 +940,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             "pace_needed":      pace_needed,
             "plan_curve_used":  plan_curve_used,
             "plan_curve_ref":   l["plan_curve_ref"],
+            "plan_curve_mode":  plan_curve_mode,
             "last_updated":     datetime.now().isoformat(),
             "_source":          "db",
         }

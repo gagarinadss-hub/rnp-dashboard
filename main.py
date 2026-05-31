@@ -364,8 +364,18 @@ def activate_launch(launch_id: int):
 
 @app.put("/api/launches/{launch_id}/plan-curve")
 def set_plan_curve(launch_id: int, body: dict):
-    """Set reference launch for plan-curve shaping. ref_launch_id=null resets to even."""
-    from db import set_plan_curve_ref
+    """Shape the plan-by-day curve for a launch.
+
+    Body options (priority: manual > reference > history):
+      • {"manual": [700, 700, 100]} — explicit per-day weights (normalised);
+        pass null/[] to clear the manual curve.
+      • {"ref_launch_id": 12}       — copy the daily shape of another launch.
+      • {"ref_launch_id": null}     — fall back to the 5-launch history curve.
+    """
+    from db import set_plan_curve_ref, set_plan_curve_manual
+    if "manual" in body:
+        set_plan_curve_manual(launch_id, body.get("manual"))
+        return {"status": "ok", "launch_id": launch_id, "manual": body.get("manual")}
     ref = body.get("ref_launch_id")
     set_plan_curve_ref(launch_id, ref if ref else None)
     return {"status": "ok", "launch_id": launch_id, "plan_curve_ref": ref}
