@@ -1655,6 +1655,17 @@ thead .ch-grid-sticky { z-index: 4; }
   .kpi-grid-5 { grid-template-columns: 1fr 1fr; }
 }
 
+/* ── Launch detail title row (с кнопкой редактирования) ────────────────── */
+.detail-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 4px;
+}
+.detail-title-row h2 { margin: 0; }
+
+/* ── 2-column KPI grid (План + Факт) ───────────────────────────────────── */
+.kpi-grid-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 640px) { .kpi-grid-2 { grid-template-columns: 1fr; } }
+
 /* ── 4-column KPI grid ─────────────────────────────────────────────────── */
 .kpi-grid-4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 900px) { .kpi-grid-4 { grid-template-columns: 1fr 1fr; } }

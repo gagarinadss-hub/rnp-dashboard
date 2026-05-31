@@ -178,40 +178,6 @@ function renderDashboard() {
   document.getElementById('hero-actual').textContent  = fmt(o.total_actual);
   document.getElementById('kpi-fact-pct').textContent = `${o.completion_pct}% от плана`;
 
-  // Вчера
-  const yd = o.yesterday_actual ?? 0;
-  const ydDelta = o.yesterday_delta ?? 0;
-  document.getElementById('kpi-yesterday').textContent = fmt(yd);
-  const deltaEl = document.getElementById('kpi-yesterday-delta');
-  if (ydDelta !== 0) {
-    const sign = ydDelta > 0 ? '+' : '';
-    deltaEl.textContent = `${sign}${fmt(ydDelta)} vs позавчера`;
-    deltaEl.className = `kpi-sub ${ydDelta > 0 ? 'delta-up' : 'delta-down'}`;
-  } else {
-    deltaEl.textContent = 'нет сравнения';
-    deltaEl.className = 'kpi-sub';
-  }
-
-  // Прогноз финала
-  const fSub = document.getElementById('kpi-forecast-pct');
-  if (notStarted) {
-    document.getElementById('kpi-forecast').textContent = '—';
-    fSub.textContent = 'появится после старта';
-    fSub.className = 'kpi-sub';
-  } else {
-    document.getElementById('kpi-forecast').textContent = fmt(f.projected_total);
-    const fPct = f.projected_pct;
-    fSub.textContent = `${fPct}% от плана`;
-    fSub.className = `kpi-sub ${fPct >= 90 ? 'delta-up' : fPct >= 70 ? '' : 'delta-down'}`;
-  }
-
-  // Нужно в день
-  const pace = o.pace_needed ?? 0;
-  document.getElementById('kpi-pace').textContent = pace > 0 ? fmt(pace) : '—';
-  document.getElementById('kpi-pace-sub').textContent = pace > 0
-    ? `× ${o.days_remaining} дн. до плана`
-    : 'план выполнен';
-
   // ── Plan-curve selector ──────────────────────────────────────────────────
   renderPlanCurveSelect(o);
 
@@ -820,8 +786,10 @@ async function loadLaunches() {
 }
 
 let detailChart = null;
+let detailLaunchId = null;
 
 async function showLaunchDetail(id) {
+  detailLaunchId = id;
   document.getElementById('launchesListView').classList.add('hidden');
   const detailView = document.getElementById('launchDetailView');
   detailView.classList.remove('hidden');
@@ -997,17 +965,79 @@ document.getElementById('newChannelName').addEventListener('keydown', e => {
 });
 
 // ── Modal open/close ───────────────────────────────────────────────────────
+let editingLaunchId = null;   // null = создаём новый, иначе редактируем этот id
+
 function openModal() {
+  editingLaunchId = null;
+  document.getElementById('modalTitle').textContent     = 'Новый запуск';
+  document.getElementById('modalSubmitBtn').textContent = 'Создать запуск';
   document.getElementById('modalOverlay').classList.remove('hidden');
 }
+
+// Открыть модалку в режиме редактирования: подтянуть данные запуска и заполнить форму.
+async function openEditModal(id) {
+  if (!id) { alert('Сначала выберите запуск'); return; }
+  try {
+    const data = await fetch('/api/launches/' + id).then(r => r.json());
+    const o = data.overview || {};
+    const chs = data.channels || [];
+
+    editingLaunchId = id;
+    document.getElementById('modalTitle').textContent     = 'Редактировать запуск';
+    document.getElementById('modalSubmitBtn').textContent = 'Сохранить';
+
+    const form = document.getElementById('newLaunchForm');
+    form.reset();
+    form.name.value           = o.name || '';
+    form.reg_start.value      = o.reg_start || '';
+    form.reg_end.value        = o.reg_end || '';
+    form.event_date.value     = o.event_date || '';
+    form.event_end_date.value = o.event_end_date || '';
+    form.total_plan.value     = o.total_plan || '';
+
+    // Каналы: показываем известные + уже привязанные к запуску
+    const names = new Set(KNOWN_CHANNELS);
+    chs.forEach(c => names.add(c.name));
+    modalChannels = [...names];
+    populateChannelsList();
+
+    // Отмечаем и заполняем каналы запуска
+    chs.forEach(c => {
+      const cb = document.querySelector(`#channelsList input[type=checkbox][value="${cssEscape(c.name)}"]`);
+      if (!cb) return;
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change'));
+      const row = cb.closest('.channel-row');
+      row.querySelector('.channel-plan').value = c.plan || '';
+      row.querySelector('.channel-resp').value = c.responsible || '';
+    });
+
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  } catch (err) {
+    alert('Не удалось загрузить запуск для редактирования: ' + err.message);
+  }
+}
+
+// Безопасное экранирование значения для querySelector
+function cssEscape(s) {
+  return String(s).replace(/["\\]/g, '\\$&');
+}
+
 function closeModal() {
   document.getElementById('modalOverlay').classList.add('hidden');
   document.getElementById('newLaunchForm').reset();
+  editingLaunchId = null;
+  document.getElementById('modalTitle').textContent     = 'Новый запуск';
+  document.getElementById('modalSubmitBtn').textContent = 'Создать запуск';
   modalChannels = [...KNOWN_CHANNELS];
   populateChannelsList();
 }
 
 document.getElementById('newLaunchBtn').addEventListener('click', openModal);
+document.getElementById('editLaunchBtn')?.addEventListener('click', () => openEditModal(activeLaunchId));
+document.getElementById('editDetailBtn')?.addEventListener('click', () => {
+  if (detailLaunchId) openEditModal(detailLaunchId);
+});
 document.getElementById('closeModal').addEventListener('click', closeModal);
 document.getElementById('cancelModal').addEventListener('click', closeModal);
 document.getElementById('modalOverlay').addEventListener('click', e => {
@@ -1038,26 +1068,30 @@ document.getElementById('newLaunchForm').addEventListener('submit', async e => {
     total_plan:     parseInt(fd.get('total_plan')) || 0,
     channels,
   };
+  const isEdit = editingLaunchId != null;
   const submitBtn = e.target.querySelector('[type=submit]');
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Создаём...';
+  submitBtn.textContent = isEdit ? 'Сохраняем...' : 'Создаём...';
   try {
-    const resp = await fetch('/api/launches', {
-      method: 'POST',
+    const url    = isEdit ? `/api/launches/${editingLaunchId}` : '/api/launches';
+    const method = isEdit ? 'PUT' : 'POST';
+    const resp = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const created = await resp.json();
+    const result = await resp.json();
+    const targetId = isEdit ? editingLaunchId : result.id;
     closeModal();
-    // Switch to the new launch
-    activeLaunchId = created.id;
+    // Switch to the created / edited launch
+    activeLaunchId = targetId;
     chListOpen.clear();
     await loadLaunchSelector();
     document.querySelector('.nav-item[data-tab="dashboard"]').click();
     await loadDashboard();
   } catch (err) {
-    alert('Ошибка создания запуска: ' + err.message);
+    alert(`Ошибка ${editingLaunchId != null ? 'сохранения' : 'создания'} запуска: ` + err.message);
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Создать запуск';

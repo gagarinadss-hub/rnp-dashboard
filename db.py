@@ -1477,3 +1477,30 @@ def update_launch(launch_id: int, **fields) -> dict:
         params.append(launch_id)
         conn.execute(f"UPDATE launches SET {', '.join(sets)} WHERE id=?", params)
     return {"id": launch_id, "updated": updated}
+
+
+def upsert_launch_channels(launch_id: int, channels: list) -> dict:
+    """Создать/обновить планы и ответственных по каналам запуска.
+    Не удаляет каналы, которых нет в списке (без потери дневных данных) —
+    обновляет переданные и добавляет новые. Возвращает {id, channels: N}."""
+    if not channels:
+        return {"id": launch_id, "channels": 0}
+    with get_db() as conn:
+        exists = conn.execute("SELECT id FROM launches WHERE id=?", (launch_id,)).fetchone()
+        if not exists:
+            return None
+        n = 0
+        for ch in channels:
+            name = (ch.get("name") or "").strip()
+            if not name:
+                continue
+            ch_id = upsert_channel(conn, name)
+            conn.execute(
+                """INSERT INTO launch_channels(launch_id, channel_id, plan, responsible)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT(launch_id, channel_id)
+                   DO UPDATE SET plan=excluded.plan, responsible=excluded.responsible""",
+                (launch_id, ch_id, int(ch.get("plan") or 0), (ch.get("responsible") or "").strip())
+            )
+            n += 1
+    return {"id": launch_id, "channels": n}

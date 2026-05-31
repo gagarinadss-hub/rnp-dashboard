@@ -302,14 +302,22 @@ def update_launch_endpoint(launch_id: int, body: dict):
     """Обновить метаданные запуска (даты регистрации/мероприятия, название, план).
     Принимает любое подмножество: name, reg_start, reg_end, event_date,
     event_end_date, total_plan."""
-    from db import update_launch
+    from db import update_launch, upsert_launch_channels
     allowed = {"name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan"}
     fields = {k: v for k, v in body.items() if k in allowed}
-    if not fields:
+    channels = body.get("channels")
+    if not fields and not channels:
         raise HTTPException(400, "No updatable fields provided")
-    result = update_launch(launch_id, **fields)
-    if result is None:
-        raise HTTPException(404, "Launch not found")
+    result = {"id": launch_id, "updated": []}
+    if fields:
+        result = update_launch(launch_id, **fields)
+        if result is None:
+            raise HTTPException(404, "Launch not found")
+    if channels:
+        ch_res = upsert_launch_channels(launch_id, channels)
+        if ch_res is None:
+            raise HTTPException(404, "Launch not found")
+        result["channels"] = ch_res["channels"]
     return {"status": "ok", **result}
 
 
