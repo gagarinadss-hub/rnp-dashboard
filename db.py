@@ -647,6 +647,22 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             (launch_id,)
         ).fetchall()
 
+        # Сверка плана: если сумма планов по каналам ≠ план запуска (total_plan),
+        # пропорционально раскидываем разницу по каналам, чтобы сумма по каналам
+        # всегда совпадала с планом запуска. Хвост округления — на крупнейший
+        # канал. Исходные данные в БД не меняем, правка только в расчёте.
+        raw_plans      = [(ch["ch_id"], ch["plan"] or 0) for ch in ch_rows]
+        raw_plan_sum   = sum(p for _, p in raw_plans)
+        launch_total   = l["total_plan"] or 0
+        if launch_total > 0 and raw_plan_sum > 0 and launch_total != raw_plan_sum:
+            scaled_plan = {cid: int(round(p * launch_total / raw_plan_sum)) for cid, p in raw_plans}
+            drift = launch_total - sum(scaled_plan.values())
+            if drift != 0 and scaled_plan:
+                big = max(scaled_plan, key=lambda k: scaled_plan[k])
+                scaled_plan[big] += drift
+        else:
+            scaled_plan = {cid: p for cid, p in raw_plans}
+
         # yesterday / day-before indices (0-based)
         yesterday_idx   = days_elapsed - 2   # day before today
         day_before_idx  = days_elapsed - 3   # two days ago
@@ -672,7 +688,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
 
             daily_actual = [day_map.get(i + 1, 0) for i in range(total_days)]
             total_actual_ch = sum(daily_actual)
-            ch_plan = ch["plan"] or 0
+            ch_plan = scaled_plan.get(ch["ch_id"], ch["plan"] or 0)
 
             # ── Живой Справочник: подменяем факт канала на доверенное число ──
             if ch["ch_name"] in live_ch_actuals:
