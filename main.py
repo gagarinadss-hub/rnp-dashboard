@@ -207,11 +207,38 @@ def channel_history(channel_name: str):
     return data
 
 
+def _live_override_for(launch_id: int) -> dict | None:
+    """Для активного запуска тянет доверенные числа каналов из живого
+    Справочника. None — если запуск не активен, демо-режим или Sheets недоступен
+    (тогда дашборд считается по БД, как раньше)."""
+    if DEMO_MODE:
+        return None
+    from db import get_active_launch_id
+    if get_active_launch_id() != launch_id:
+        return None
+    try:
+        data = get_data()
+        if data.get("overview", {}).get("_source") not in ("live", "cache"):
+            return None
+        channels = data.get("channels", [])
+        daily    = data.get("daily", {})
+        ch_actuals = {c["name"]: c["actual"] for c in channels if c.get("name")}
+        daily_map  = dict(zip(daily.get("dates", []), daily.get("daily_actual", [])))
+        if not ch_actuals:
+            return None
+        return {"channel_actuals": ch_actuals, "daily_actuals": daily_map}
+    except Exception as e:
+        log.warning(f"[live_override] не удалось получить живые данные: {e}")
+        return None
+
+
 @app.get("/api/launches/{launch_id}/dashboard")
 def launch_dashboard(launch_id: int):
-    """DB-based dashboard for any launch (including active)."""
+    """DB-based dashboard. Для активного запуска факт каналов берётся из
+    живого Справочника (доверенные числа), план/комментарии/задачи — из БД."""
     from db import get_dashboard_from_db
-    data = get_dashboard_from_db(launch_id)
+    override = _live_override_for(launch_id)
+    data = get_dashboard_from_db(launch_id, live_override=override)
     if not data:
         raise HTTPException(404, "Launch not found")
     return data

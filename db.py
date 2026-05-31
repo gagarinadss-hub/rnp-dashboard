@@ -449,8 +449,21 @@ def compute_alerts(overview: dict, channels: list, forecast: dict) -> list[dict]
     return alerts
 
 
-def get_dashboard_from_db(launch_id: int) -> dict:
-    """Compute a full dashboard payload from SQLite data only."""
+def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> dict:
+    """Compute a full dashboard payload from SQLite data.
+
+    Если передан ``live_override`` (для активного запуска), фактические числа
+    каналов и дневная кривая берутся из живого Справочника (тем, которым
+    доверяет команда), а план/ответственные/комментарии/задачи/кривая плана
+    остаются из БД. Сопоставление каналов — по имени.
+
+    live_override = {
+        "channel_actuals": {channel_name: actual_int},
+        "daily_actuals":   {date_str: count_int},
+    }
+    """
+    live_ch_actuals  = (live_override or {}).get("channel_actuals") or {}
+    live_daily_map   = (live_override or {}).get("daily_actuals") or {}
     with get_db() as conn:
         l = conn.execute(
             "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active, plan_curve_ref FROM launches WHERE id=?",
@@ -503,6 +516,21 @@ def get_dashboard_from_db(launch_id: int) -> dict:
             daily_actual = [day_map.get(i + 1, 0) for i in range(total_days)]
             total_actual_ch = sum(daily_actual)
             ch_plan = ch["plan"] or 0
+
+            # ── Живой Справочник: подменяем факт канала на доверенное число ──
+            if ch["ch_name"] in live_ch_actuals:
+                live_a = int(live_ch_actuals[ch["ch_name"]])
+                db_sum = sum(daily_actual)
+                if db_sum > 0:
+                    # сохраняем форму кривой канала из БД, масштабируем к live
+                    daily_actual = [round(x * live_a / db_sum) for x in daily_actual]
+                    drift = live_a - sum(daily_actual)
+                    if daily_actual:
+                        daily_actual[-1] += drift
+                else:
+                    # нет дневной разбивки в БД — раскладываем по кривой плана
+                    daily_actual = _distribute_plan(live_a, total_days, plan_fractions)
+                total_actual_ch = live_a
 
             # Distribute plan across days (by reference curve, else evenly)
             daily_plan = _distribute_plan(ch_plan, total_days, plan_fractions)
@@ -558,6 +586,27 @@ def get_dashboard_from_db(launch_id: int) -> dict:
 
         if null_map:
             total_actual = sum(daily_total_actual)
+
+        # ── Живой Справочник: итог и дневная кривая из доверенного источника ──
+        if live_ch_actuals:
+            # Доверенный итог = сумма факта каналов Справочника (как на /api/dashboard,
+            # те самые 100.8%, которым верит команда).
+            total_actual = sum(c["actual"] for c in channels)
+            if live_daily_map:
+                # Форму дневной кривой берём из живой дневной карты, но масштабируем
+                # к доверенному итогу — чтобы конец кумулятивной кривой = заголовку.
+                curve = [live_daily_map.get(day_dates[i], 0) for i in range(total_days)]
+                curve_sum = sum(curve)
+                if curve_sum > 0 and total_actual > 0:
+                    scaled = [round(x * total_actual / curve_sum) for x in curve]
+                    drift = total_actual - sum(scaled)
+                    for j in range(len(scaled) - 1, -1, -1):
+                        if scaled[j] > 0:
+                            scaled[j] += drift
+                            break
+                    daily_total_actual = scaled
+                else:
+                    daily_total_actual = curve
 
         completion_pct = round(total_actual / total_plan * 100, 1) if total_plan > 0 else 0
         daily_plan_list = [sum(c["daily_plan"][i] for c in channels) for i in range(total_days)]
