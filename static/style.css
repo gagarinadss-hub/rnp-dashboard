@@ -798,12 +798,9 @@ canvas { max-width: 100%; }
 
 /* ── KPI Today (lime highlight) ───────────────────────────────────────── */
 .kpi-card--today {
-  background: linear-gradient(135deg, var(--lime-bright) 0%, var(--lime) 100%);
+  background: var(--card);
   color: var(--ink);
 }
-.kpi-card--today .kpi-label { color: rgba(0,0,0,0.55); }
-.kpi-card--today .kpi-value { color: var(--ink); }
-.kpi-card--today .kpi-sub   { color: rgba(0,0,0,0.70); }
 
 /* ── Channels insight row ─────────────────────────────────────────────── */
 .channels-insight-row {
@@ -1378,7 +1375,7 @@ thead .ch-grid-sticky { z-index: 4; }
   color: var(--ink);
 }
 .kpi-icon svg { width: 19px; height: 19px; display: block; }
-.kpi-card--today .kpi-icon { background: rgba(0,0,0,0.10); color: var(--ink); }
+.kpi-card--today .kpi-icon { background: #EEF7CE; color: var(--lime-deep); }
 .hero-emoji svg { width: 30px; height: 30px; display: block; color: var(--ink); }
 .card-head h3 svg, .tab-subtitle svg, .channels-tab-header h2 svg,
 .utm-tab-header h2 svg { width: 17px; height: 17px; vertical-align: -3px; margin-right: 4px; }
@@ -1662,7 +1659,7 @@ thead .ch-grid-sticky { z-index: 4; }
 .kpi-card { display: flex; align-items: flex-start; gap: 14px; }
 .kpi-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
 .kpi-body { min-width: 0; flex: 1; }
-.kpi-card--today { border-left: none; }
+.kpi-card--today { border-left: 3px solid var(--lime-bar); }
 
 /* ── Card head right cluster ───────────────────────────────────────────── */
 .card-head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
