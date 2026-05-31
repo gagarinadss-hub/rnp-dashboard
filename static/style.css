@@ -1328,6 +1328,23 @@ thead .ch-grid-sticky { z-index: 4; }
 .hero-emoji { font-size: 36px; line-height: 1; flex-shrink: 0; }
 .hero-name { font-size: 20px; font-weight: 800; line-height: 1.2; }
 .hero-dates { font-size: 13px; opacity: 0.8; margin-top: 3px; }
+.hero-badge {
+  display: inline-block;
+  margin-top: 9px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1px;
+}
+
+/* «План» KPI card + приглушение факт/прогноз до старта запуска */
+.kpi-card--plan { border-left: 3px solid var(--lime-bar); }
+.is-not-started .kpi-card--today,
+.is-not-started .kpi-card--forecast,
+.is-not-started .kpi-card--yesterday { opacity: 0.5; }
 
 .hero-stats {
   display: flex;

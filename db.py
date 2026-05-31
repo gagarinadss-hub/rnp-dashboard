@@ -571,8 +571,13 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         span = reg_window_span(l)
         total_days     = span if span else max(1, (reg_end - reg_start).days + 1)
         window_end     = reg_start + timedelta(days=total_days - 1)
-        days_elapsed   = max(1, min((today - reg_start).days + 1, total_days))
-        days_remaining = max(0, (window_end - today).days)
+        # Сколько дней запуска прошло. До старта — 0 (запуск ещё не начался),
+        # после конца — все total_days. Оставшиеся дни считаем В ПРЕДЕЛАХ окна
+        # запуска, а не «календарно до конца», иначе для будущего запуска
+        # pace_needed = план / (дни до конца) расходится с дневным планом графика.
+        raw_elapsed    = (today - reg_start).days + 1
+        days_elapsed   = max(0, min(raw_elapsed, total_days))
+        days_remaining = max(0, total_days - days_elapsed)
 
         day_dates = [str(reg_start + timedelta(days=i)) for i in range(total_days)]
 
@@ -796,6 +801,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             "days_elapsed":     days_elapsed,
             "days_total":       total_days,
             "days_remaining":   days_remaining,
+            "not_started":      today < reg_start,
             "today_actual":     today_actual,
             "today_plan":       today_plan,
             "today_pct":        today_pct,

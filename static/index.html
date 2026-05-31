@@ -6,7 +6,7 @@
   <title>РНП Запусков</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=6">
+  <link rel="stylesheet" href="/style.css?v=7">
 </head>
 <body class="app-layout">
 
@@ -84,6 +84,7 @@
             <div>
               <div class="hero-name" id="launch-name">—</div>
               <div class="hero-dates" id="launch-dates">—</div>
+              <div class="hero-badge" id="launch-badge" style="display:none"></div>
             </div>
           </div>
           <div class="hero-stats">
@@ -113,8 +114,16 @@
           </div>
         </div>
 
-        <!-- KPI row (4 essentials) -->
-        <div class="kpi-grid kpi-grid-4">
+        <!-- KPI row (5 essentials) -->
+        <div class="kpi-grid kpi-grid-5">
+          <div class="kpi-card kpi-card--plan">
+            <div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+            <div class="kpi-body">
+              <div class="kpi-label">План</div>
+              <div class="kpi-value" id="kpi-plan">—</div>
+              <div class="kpi-sub">цель запуска</div>
+            </div>
+          </div>
           <div class="kpi-card kpi-card--today">
             <div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
             <div class="kpi-body">
@@ -163,7 +172,6 @@
               <div class="chart-legend">
                 <span><span class="dot" style="background:#B6E029"></span>Факт</span>
                 <span><span class="dot" style="background:#CBD8EE"></span>План</span>
-                <span><span class="dot" style="background:#17191F"></span>Факт ∑</span>
                 <span><span class="dot" style="background:#5B8DEF"></span>Прогноз</span>
               </div>
             </div>
@@ -435,6 +443,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>

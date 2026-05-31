@@ -142,16 +142,38 @@ function renderDashboard() {
   document.getElementById('channels-launch-name').textContent = o.launch_name;
 
   // ── Hero card ──────────────────────────────────────────────────────────
+  const notStarted = !!o.not_started;
   document.getElementById('launch-name').textContent  = o.launch_name;
   document.getElementById('launch-dates').textContent = `${fmtDate(o.start_date)} — ${fmtDate(o.end_date)}`;
   document.getElementById('hero-pct').textContent     = `${o.completion_pct}%`;
   document.getElementById('kpi-days-left').textContent = o.days_remaining ?? '—';
-  document.getElementById('launch-day-hero').textContent = `День ${o.days_elapsed} / ${o.days_total}`;
+  document.getElementById('launch-day-hero').textContent = notStarted
+    ? `0 / ${o.days_total}`
+    : `День ${o.days_elapsed} / ${o.days_total}`;
   document.getElementById('heroFill').style.width    = `${clamp(o.completion_pct, 0, 100)}%`;
   document.getElementById('hero-actual-label').textContent = `${fmt(o.total_actual)} факт`;
-  document.getElementById('hero-forecast').textContent = `Прогноз: ${fmt(f.projected_total)} (${f.projected_pct}%)`;
+  document.getElementById('hero-forecast').textContent = notStarted
+    ? `Цель: ${fmt(o.total_plan)}`
+    : `Прогноз: ${fmt(f.projected_total)} (${f.projected_pct}%)`;
 
-  // ── KPI cards (4 essentials) ─────────────────────────────────────────────
+  // Бейдж «запуск ещё не начался» для будущих запусков
+  const badge = document.getElementById('launch-badge');
+  if (badge) {
+    if (notStarted) {
+      badge.textContent = `Стартует ${fmtDate(o.start_date)} — запуск ещё не начался`;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  // Приглушаем «факт/прогноз», пока нет реальных данных
+  const dash = document.getElementById('tab-dashboard');
+  if (dash) dash.classList.toggle('is-not-started', notStarted);
+
+  // ── KPI cards ────────────────────────────────────────────────────────────
+  // План (цель запуска)
+  document.getElementById('kpi-plan').textContent = o.total_plan > 0 ? fmt(o.total_plan) : '—';
+
   // Факт сейчас
   document.getElementById('hero-actual').textContent  = fmt(o.total_actual);
   document.getElementById('kpi-fact-pct').textContent = `${o.completion_pct}% от плана`;
@@ -171,11 +193,17 @@ function renderDashboard() {
   }
 
   // Прогноз финала
-  document.getElementById('kpi-forecast').textContent = fmt(f.projected_total);
-  const fPct = f.projected_pct;
   const fSub = document.getElementById('kpi-forecast-pct');
-  fSub.textContent = `${fPct}% от плана`;
-  fSub.className = `kpi-sub ${fPct >= 90 ? 'delta-up' : fPct >= 70 ? '' : 'delta-down'}`;
+  if (notStarted) {
+    document.getElementById('kpi-forecast').textContent = '—';
+    fSub.textContent = 'появится после старта';
+    fSub.className = 'kpi-sub';
+  } else {
+    document.getElementById('kpi-forecast').textContent = fmt(f.projected_total);
+    const fPct = f.projected_pct;
+    fSub.textContent = `${fPct}% от плана`;
+    fSub.className = `kpi-sub ${fPct >= 90 ? 'delta-up' : fPct >= 70 ? '' : 'delta-down'}`;
+  }
 
   // Нужно в день
   const pace = o.pace_needed ?? 0;
@@ -301,25 +329,12 @@ function renderMainChart(d, f, o) {
           borderRadius: 6, order: 4,
         },
         {
-          type: 'line', label: 'Факт (накопл.)',
-          data: d.cumulative_actual,
-          borderColor: '#17191F', backgroundColor: 'rgba(23,25,31,0.05)',
-          fill: true, tension: 0.4, pointRadius: 4, borderWidth: 2.5,
-          order: 1, yAxisID: 'y2',
-        },
-        {
           type: 'line', label: 'Прогноз (накопл.)',
           data: f.cumulative_forecast,
-          borderColor: '#5B8DEF', borderDash: [5, 4],
-          fill: false, tension: 0.4, pointRadius: 3, borderWidth: 2,
-          order: 2, yAxisID: 'y2',
-        },
-        {
-          type: 'line', label: 'План (накопл.)',
-          data: f.cumulative_plan,
-          borderColor: '#C2C7D0', borderDash: [3, 3],
-          fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
-          order: 2, yAxisID: 'y2',
+          borderColor: '#5B8DEF', backgroundColor: 'rgba(91,141,239,0.06)',
+          borderDash: [5, 4],
+          fill: true, tension: 0.4, pointRadius: 3, borderWidth: 2,
+          order: 1, yAxisID: 'y2',
         },
       ],
     },
