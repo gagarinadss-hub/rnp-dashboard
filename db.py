@@ -368,6 +368,26 @@ def _cumulative(values):
     return result
 
 
+# Глобальная историческая кривая долей регистраций по дням запуска
+# (лист «Для расчёта процентов запуска - дни»). Та же, что DEFAULT_DAY_PCTS
+# в data_processor.py — единая методология прогноза для живого и БД-путей.
+GLOBAL_DAY_PCTS = [0.066, 0.167, 0.197, 0.190, 0.212, 0.167, 0.001]
+
+
+def _forecast_fractions(total_days: int) -> list[float]:
+    """Доли ожидаемых регистраций по дням, нормированные к сумме 1.0,
+    подогнанные под длину запуска total_days."""
+    base = GLOBAL_DAY_PCTS
+    if total_days <= 0:
+        return []
+    if total_days <= len(base):
+        fr = base[:total_days]
+    else:
+        fr = base + [base[-1]] * (total_days - len(base))
+    s = sum(fr)
+    return [x / s for x in fr] if s > 0 else [1.0 / total_days] * total_days
+
+
 def _plan_curve_fractions(conn, ref_launch_id, total_days: int) -> list[float] | None:
     """Return per-day fractions (summing to 1.0) shaped like the daily fact
     distribution of a reference launch. None if reference has no usable data."""
@@ -695,32 +715,65 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         total_remaining = max(0, total_plan - total_actual)
         pace_needed     = round(total_remaining / days_remaining) if days_remaining > 0 else 0
 
-        # Forecast scenarios
-        completed_days = daily_total_actual[:days_elapsed]
-        good_days      = [a for a in completed_days if a > 0]
-        avg_all        = sum(good_days) / len(good_days) if good_days else 0
+        # ── Прогноз по методологии: проекция через накопленную долю кривой ──
+        # Регистрации распределены не ровно, а по исторической кривой долей дня
+        # (та же DEFAULT_DAY_PCTS, что в живом пути DataProcessor). Проекция =
+        # накопл.факт / накопл.доля к текущему дню. «Вялые» дни (<15% ожидания)
+        # отбрасываем, чтобы мягкий старт не занижал прогноз.
+        fcurve = _forecast_fractions(total_days)
 
-        # Realistic: average of all days
-        proj_realistic  = int(avg_all * total_days) if avg_all > 0 else total_actual
+        good_idxs = []
+        for i in range(days_elapsed):
+            expected = total_plan * fcurve[i] if i < len(fcurve) else 0
+            if expected > 0 and daily_total_actual[i] >= expected * 0.15:
+                good_idxs.append(i)
 
-        # Optimistic: average of top-3 days
-        top3 = sorted(good_days, reverse=True)[:3]
-        proj_optimistic = int((sum(top3) / len(top3)) * total_days) if top3 else proj_realistic
+        if good_idxs:
+            cum_actual = sum(daily_total_actual[i] for i in good_idxs)
+            cum_frac   = sum(fcurve[i] for i in good_idxs)
+            projected  = int(cum_actual / cum_frac) if cum_frac > 0 else total_actual
+        else:
+            cum_frac  = sum(fcurve[:days_elapsed])
+            projected = int(total_actual / cum_frac) if cum_frac > 0 else total_actual
 
-        # Pessimistic: average of last-3 days (may be declining)
-        last3 = good_days[-3:] if len(good_days) >= 3 else good_days
-        proj_pessimistic = int((sum(last3) / len(last3)) * total_days) if last3 else proj_realistic
+        # Сценарии: реалистичный — накопл.метод. Опт/пес — диапазон неопределённости
+        # ТОЛЬКО по оставшимся дням: накопленный факт уже зафиксирован, поэтому
+        # band = факт + лучший/худший дневной темп × доля оставшихся дней.
+        # Темп берём по «весомым» дням (доля >= 5%), иначе деление на крошечную
+        # долю (последний день ~0.001 / добитые дни) даёт абсурдные значения.
+        # Для завершённого запуска оставшихся дней нет → опт = пес = реал = факт.
+        proj_realistic = projected
+        remaining_frac = sum(fcurve[i] for i in range(days_elapsed, total_days))
+        observed       = sum(daily_total_actual[:days_elapsed])
+        rates = [
+            daily_total_actual[i] / fcurve[i]
+            for i in good_idxs
+            if fcurve[i] >= 0.05
+        ]
+        if rates and remaining_frac > 0:
+            proj_optimistic  = int(observed + max(rates) * remaining_frac)
+            proj_pessimistic = int(observed + min(rates) * remaining_frac)
+            # удерживаем в разумной полосе вокруг реалистичного
+            proj_optimistic  = min(proj_optimistic,  int(projected * 1.5))
+            proj_pessimistic = max(proj_pessimistic, int(projected * 0.5))
+            proj_optimistic  = max(proj_optimistic,  projected)
+            proj_pessimistic = min(proj_pessimistic, projected)
+        else:
+            proj_optimistic  = projected
+            proj_pessimistic = projected
 
         projected_total = proj_realistic
         projected_pct   = round(projected_total / total_plan * 100, 1) if total_plan > 0 else 0
 
-        # Cumulative forecast line (real + projected average for future)
-        avg_for_future = int(total_actual / max(days_elapsed, 1))
+        # Кумулятивная линия прогноза: факт за прошедшие дни + проекция по кривой
+        daily_forecast = [int(projected * f) for f in fcurve]
         forecast_cum   = _cumulative(daily_total_actual[:days_elapsed])
-        for _ in range(days_elapsed, total_days):
-            forecast_cum.append((forecast_cum[-1] if forecast_cum else 0) + avg_for_future)
+        for i in range(days_elapsed, total_days):
+            inc = daily_forecast[i] if i < len(daily_forecast) else 0
+            forecast_cum.append((forecast_cum[-1] if forecast_cum else 0) + inc)
 
-        confidence = "высокая" if days_elapsed >= 3 else ("средняя" if days_elapsed >= 1 else "низкая")
+        n_good = len(good_idxs)
+        confidence = "низкая" if n_good <= 1 else ("средняя" if n_good <= 2 else "высокая")
 
         # Best / lag channels (sorted by pace_ratio)
         active_chs    = [c for c in channels if c["plan"] > 0 and c["actual"] > 0]
