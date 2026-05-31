@@ -421,6 +421,62 @@ def _plan_curve_fractions(conn, ref_launch_id, total_days: int) -> list[float] |
     return [x / s for x in shape]
 
 
+def _history_day_fractions(conn, total_days: int, exclude_launch_id, n: int = 5) -> list[float] | None:
+    """Доли регистраций по дням, усреднённые по последним n запускам с реальными
+    дневными данными. Логика плана по дням (по просьбе): берём первые total_days
+    дней каждого из последних n запусков, для каждого считаем его ДОЛЮ по дням
+    (нормируем к 1, чтобы крупный запуск не доминировал), усредняем доли по
+    запускам. Так план текущего запуска по дням повторяет типичную динамику
+    прошлых запусков. None — если истории нет.
+
+    Источник дневных итогов: строки без канала (импортный агрегат) — это реальный
+    факт по дням; если их нет, суммируем по каналам.
+    """
+    if total_days <= 0:
+        return None
+    rows = conn.execute(
+        "SELECT id FROM launches WHERE id != ? ORDER BY date(reg_start) DESC, id DESC",
+        (exclude_launch_id,)
+    ).fetchall()
+
+    agg  = [0.0] * total_days
+    used = 0
+    for r in rows:
+        lid = r["id"]
+        drows = conn.execute(
+            "SELECT day_num, SUM(count) AS t FROM daily_registrations "
+            "WHERE launch_id=? AND channel_id IS NULL GROUP BY day_num", (lid,)
+        ).fetchall()
+        if not drows:
+            drows = conn.execute(
+                "SELECT day_num, SUM(count) AS t FROM daily_registrations "
+                "WHERE launch_id=? GROUP BY day_num", (lid,)
+            ).fetchall()
+        if not drows:
+            continue
+        dmax = max(x["day_num"] for x in drows)
+        # сравнимы только запуски, у которых есть данные минимум на total_days дней
+        if dmax < total_days:
+            continue
+        daily = [0] * dmax
+        for x in drows:
+            daily[x["day_num"] - 1] = x["t"] or 0
+        first = daily[:total_days]
+        s = sum(first)
+        if s <= 0:
+            continue
+        for i in range(total_days):
+            agg[i] += first[i] / s
+        used += 1
+        if used >= n:
+            break
+
+    total = sum(agg)
+    if used == 0 or total <= 0:
+        return None
+    return [x / total for x in agg]
+
+
 def _distribute_plan(ch_plan: int, total_days: int, fractions: list[float] | None) -> list[int]:
     """Distribute a channel plan across days. By a reference curve if provided,
     otherwise evenly. Always sums exactly to ch_plan."""
@@ -595,8 +651,15 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         yesterday_idx   = days_elapsed - 2   # day before today
         day_before_idx  = days_elapsed - 3   # two days ago
 
-        # Plan curve: shape per-day plan like a reference launch's fact curve
-        plan_fractions = _plan_curve_fractions(conn, l["plan_curve_ref"], total_days)
+        # Кривая плана по дням:
+        #  • если выбрана явная «База плана» (plan_curve_ref) — форма того запуска;
+        #  • иначе по умолчанию — усреднённая динамика последних 5 запусков
+        #    (план каждого канала и общий план раскидываются по этой кривой,
+        #     поэтому сумма по каналам = план на день).
+        if l["plan_curve_ref"]:
+            plan_fractions = _plan_curve_fractions(conn, l["plan_curve_ref"], total_days)
+        else:
+            plan_fractions = _history_day_fractions(conn, total_days, launch_id, n=5)
         plan_curve_used = plan_fractions is not None
 
         channels = []

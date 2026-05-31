@@ -264,7 +264,7 @@ function renderPlanCurveSelect(o) {
   // Only meaningful for DB launches (curve is stored per launch)
   if (!isDbSource()) {
     sel.disabled = true;
-    sel.innerHTML = '<option value="">равномерно</option>';
+    sel.innerHTML = '<option value="">по истории (посл. 5)</option>';
     return;
   }
   sel.disabled = false;
@@ -272,7 +272,7 @@ function renderPlanCurveSelect(o) {
   const currentId = o.launch_id;
   const curRef    = o.plan_curve_ref ?? '';
 
-  let opts = '<option value="">равномерно</option>';
+  let opts = '<option value="">по истории (посл. 5)</option>';
   (allLaunches || []).forEach(l => {
     if (l.id === currentId) return;                 // can't base on itself
     if (!(l.total_actual > 0)) return;              // need real fact to shape a curve

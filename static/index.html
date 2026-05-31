@@ -6,7 +6,7 @@
   <title>РНП Запусков</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=8">
 </head>
 <body class="app-layout">
 
@@ -163,10 +163,10 @@
           <div class="card-head">
             <h3>Динамика регистраций по дням</h3>
             <div class="chart-head-right">
-              <label class="curve-select-wrap" title="Форма плана по дням: равномерно или по кривой реального прошлого запуска">
+              <label class="curve-select-wrap" title="Форма плана по дням: по умолчанию — усреднённая динамика последних 5 запусков; можно выбрать кривую конкретного прошлого запуска">
                 <span>База плана:</span>
                 <select id="planCurveSelect" class="curve-select">
-                  <option value="">равномерно</option>
+                  <option value="">по истории (посл. 5)</option>
                 </select>
               </label>
               <div class="chart-legend">
@@ -443,6 +443,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>
