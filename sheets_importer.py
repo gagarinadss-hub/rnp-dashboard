@@ -176,7 +176,8 @@ def run_import(launch_id: int) -> dict:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     row = con.execute(
-        "SELECT reg_start FROM launches WHERE id = ?", (launch_id,)
+        "SELECT reg_start, reg_end, event_date, event_end_date FROM launches WHERE id = ?",
+        (launch_id,)
     ).fetchone()
     con.close()
 
@@ -184,6 +185,27 @@ def run_import(launch_id: int) -> dict:
         return {'error': f'launch {launch_id} не найден или нет reg_start'}
 
     reg_start = datetime.fromisoformat(row['reg_start']).date()
+
+    # Окно дат запуска: регистрации засчитываем только если их дата попадает
+    # в [reg_start .. последний день события]. Это не даёт занести в запуск
+    # чужие данные (напр. майские строки в июньский запуск).
+    def _pd(v):
+        try:
+            return datetime.fromisoformat(v).date() if v else None
+        except Exception:
+            return None
+    _ends = [d for d in (_pd(row['reg_end']), _pd(row['event_date']),
+                         _pd(row['event_end_date'])) if d]
+    window_end = max(_ends) if _ends else None
+    skipped_out_of_window = 0
+
+    def _day_num(dt):
+        """Возвращает day_num (>=1) или None, если дата вне окна запуска."""
+        if dt < reg_start:
+            return None
+        if window_end and dt > window_end:
+            return None
+        return (dt - reg_start).days + 1
 
     # Строим маппинг из Справочника
     try:
@@ -227,7 +249,10 @@ def run_import(launch_id: int) -> dict:
                 dt = datetime.strptime(date_str[:10], '%d.%m.%Y').date()
             except ValueError:
                 continue
-            day_num = max(1, (dt - reg_start).days + 1)
+            day_num = _day_num(dt)
+            if day_num is None:
+                skipped_out_of_window += 1
+                continue
             ch = _resolve(src, med, trigger, platform, mapping, db_mappings)
             channel_day[ch][day_num] += 1
             key = (src, med, platform)
@@ -251,7 +276,10 @@ def run_import(launch_id: int) -> dict:
                 dt = datetime.strptime(date_str[:10], '%d.%m.%Y').date()
             except ValueError:
                 continue
-            day_num = max(1, (dt - reg_start).days + 1)
+            day_num = _day_num(dt)
+            if day_num is None:
+                skipped_out_of_window += 1
+                continue
             channel_day['Рефка'][day_num] += 1
     except Exception as e:
         log.warning(f'[importer] лист рефералок не прочитан: {e}')
@@ -313,12 +341,13 @@ def run_import(launch_id: int) -> dict:
         unmatched_list = []
         utm_stats_list = []
 
-    log.info(f'[importer] ✅ launch={launch_id}  всего={total}  записей={inserted}  пропущено={skipped}  нераспред.меток={len(unmatched_list)}')
+    log.info(f'[importer] ✅ launch={launch_id}  всего={total}  записей={inserted}  пропущено={skipped}  вне_окна={skipped_out_of_window}  нераспред.меток={len(unmatched_list)}')
     return {
         'launch_id':            launch_id,
         'total_registrations':  total,
         'db_records':           inserted,
         'skipped_channels':     skipped,
+        'skipped_out_of_window': skipped_out_of_window,
         'unmatched_labels':     len(unmatched_list),
         'imported_at':          _last_import.isoformat(),
     }
