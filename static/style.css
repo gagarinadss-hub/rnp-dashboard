@@ -882,6 +882,11 @@ canvas { max-width: 100%; }
 
 .ch-spark { display: flex; align-items: flex-end; gap: 2px; height: 28px; flex: 0 0 100px; }
 .ch-spark-bar { flex: 1; min-width: 2px; background: var(--purple-light); border-radius: 2px 2px 0 0; }
+.ch-spark-bar--hl { background: var(--lime-bar); }
+.ch-item-daytag {
+  font-size: 10px; font-weight: 700; color: var(--lime-deep);
+  background: #EEF7CE; border-radius: 5px; padding: 1px 6px; letter-spacing: .02em;
+}
 
 .ch-item-nums { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: 1; min-width: 0; }
 .ch-item-fact { font-size: 15px; font-weight: 800; color: var(--text); }

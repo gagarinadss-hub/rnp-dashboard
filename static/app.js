@@ -382,6 +382,12 @@ document.getElementById('chListSearch')?.addEventListener('input', () => {
 document.getElementById('chListSort')?.addEventListener('change', () => {
   if (chListState.channels.length) renderChannelsList();
 });
+document.getElementById('chListResp')?.addEventListener('change', () => {
+  if (chListState.channels.length) renderChannelsList();
+});
+document.getElementById('chListDay')?.addEventListener('change', () => {
+  if (chListState.channels.length) renderChannelsList();
+});
 
 // ── Channels Tab (accordion list) ──────────────────────────────────────────
 let chListState = { channels: [], comments: {}, launchId: null, canEdit: false, dates: [], daysTotal: 0 };
@@ -410,8 +416,45 @@ async function renderChannelsTab() {
   }
 
   chListState = { channels, comments: commentsMap, launchId, canEdit, dates, daysTotal };
+  populateChannelFilters();
   renderChannelsList();
   loadUnmatchedLabels();
+}
+
+// Fill the «Ответственный» and «День» dropdowns from current launch data.
+function populateChannelFilters() {
+  const { channels, dates, daysTotal } = chListState;
+
+  const respSel = document.getElementById('chListResp');
+  if (respSel) {
+    const prev = respSel.value;
+    const names = [...new Set(channels
+      .map(c => (c.responsible || '').trim())
+      .filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+    respSel.innerHTML = '<option value="">Все ответственные</option>'
+      + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    respSel.value = names.includes(prev) ? prev : '';
+  }
+
+  const daySel = document.getElementById('chListDay');
+  if (daySel) {
+    const prev = daySel.value;
+    let opts = '<option value="">Все дни</option>';
+    for (let i = 0; i < daysTotal; i++) {
+      const label = dates[i] ? `День ${i + 1} · ${dates[i]}` : `День ${i + 1}`;
+      opts += `<option value="${i}">${escapeHtml(label)}</option>`;
+    }
+    daySel.innerHTML = opts;
+    daySel.value = (prev !== '' && Number(prev) < daysTotal) ? prev : '';
+  }
+}
+
+// Build a view of a channel showing only the selected day's fact/plan/%.
+function channelForDay(c, dayIdx) {
+  const fact = c.daily_actual?.[dayIdx] ?? 0;
+  const plan = c.daily_plan?.[dayIdx]   ?? 0;
+  const pct  = plan > 0 ? Math.round(fact / plan * 100) : (fact > 0 ? 100 : 0);
+  return { ...c, actual: fact, plan, pct, yesterday_delta: 0 };
 }
 
 function sortChannelList(channels, mode) {
@@ -432,17 +475,24 @@ function renderChannelsList() {
     container.innerHTML = '<p style="color:var(--text-sub)">Нет данных по каналам</p>';
     return;
   }
-  const q    = (document.getElementById('chListSearch')?.value || '').trim().toLowerCase();
-  const mode = document.getElementById('chListSort')?.value || 'behind';
+  const q     = (document.getElementById('chListSearch')?.value || '').trim().toLowerCase();
+  const mode  = document.getElementById('chListSort')?.value || 'behind';
+  const resp  = (document.getElementById('chListResp')?.value || '').trim();
+  const dayRaw = document.getElementById('chListDay')?.value || '';
+  const dayIdx = dayRaw === '' ? null : Number(dayRaw);
+
   let list = channels.filter(c => !q || (c.name || '').toLowerCase().includes(q));
+  if (resp) list = list.filter(c => (c.responsible || '').trim() === resp);
+  // When a single day is selected, build per-day view objects so sort/% use that day.
+  if (dayIdx !== null) list = list.map(c => channelForDay(c, dayIdx));
   list = sortChannelList(list, mode);
   if (!list.length) {
     container.innerHTML = '<p style="color:var(--text-sub)">Каналы не найдены</p>';
     return;
   }
 
-  const maxFact = Math.max(...channels.map(c => c.actual || 0), 1);
-  container.innerHTML = list.map(c => channelItemHtml(c, maxFact)).join('');
+  const maxFact = Math.max(...list.map(c => c.actual || 0), 1);
+  container.innerHTML = list.map(c => channelItemHtml(c, maxFact, dayIdx)).join('');
 
   container.querySelectorAll('.ch-item-head').forEach(head => {
     head.addEventListener('click', () => toggleChannelItem(head.closest('.ch-item')));
@@ -453,17 +503,18 @@ function renderChannelsList() {
   });
 }
 
-function sparklineHtml(daily, daysTotal) {
+function sparklineHtml(daily, daysTotal, hlIdx) {
   const arr = (daily || []).slice(0, daysTotal);
   if (!arr.length) return '<div class="ch-spark"></div>';
   const max = Math.max(...arr, 1);
-  return `<div class="ch-spark">${arr.map(v => {
+  return `<div class="ch-spark">${arr.map((v, i) => {
     const h = clamp((v || 0) / max * 100, 6, 100);
-    return `<span class="ch-spark-bar" style="height:${h}%" title="${fmt(v || 0)}"></span>`;
+    const hl = (i === hlIdx) ? ' ch-spark-bar--hl' : '';
+    return `<span class="ch-spark-bar${hl}" style="height:${h}%" title="${fmt(v || 0)}"></span>`;
   }).join('')}</div>`;
 }
 
-function channelItemHtml(c, maxFact) {
+function channelItemHtml(c, maxFact, dayIdx) {
   const { daysTotal } = chListState;
   const pct = c.pct ?? 0;
   const cls = pctClass(pct);
@@ -473,6 +524,8 @@ function channelItemHtml(c, maxFact) {
   const delta = c.yesterday_delta ?? 0;
   const deltaStr = delta === 0 ? '' : (delta > 0 ? `+${fmt(delta)}` : fmt(delta));
   const deltaCls = delta > 0 ? 'delta-up' : delta < 0 ? 'delta-down' : '';
+  const dayTag = (dayIdx !== null && dayIdx !== undefined)
+    ? `<span class="ch-item-daytag">день ${dayIdx + 1}</span>` : '';
   return `
     <div class="ch-item" data-channel="${nameAttr}">
       <div class="ch-item-head">
@@ -481,10 +534,11 @@ function channelItemHtml(c, maxFact) {
           <span class="ch-item-name">${escapeHtml(c.name)}</span>
           <span class="ch-item-resp">${escapeHtml(c.responsible || '—')}</span>
         </div>
-        ${sparklineHtml(c.daily_actual, daysTotal)}
+        ${sparklineHtml(c.daily_actual, daysTotal, dayIdx)}
         <div class="ch-item-nums">
           <span class="ch-item-fact">${fmt(c.actual || 0)}</span>
           <span class="ch-item-plan">/ ${fmt(c.plan || 0)}</span>
+          ${dayTag}
           ${deltaStr ? `<span class="ch-item-delta ${deltaCls}">${deltaStr} вчера</span>` : ''}
         </div>
         <div class="ch-item-pctwrap">

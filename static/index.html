@@ -6,7 +6,7 @@
   <title>РНП Запусков</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=10">
+  <link rel="stylesheet" href="/style.css?v=11">
 </head>
 <body class="app-layout">
 
@@ -206,6 +206,12 @@
           </div>
           <div class="channels-toolbar">
             <input class="search-input" id="chListSearch" placeholder="Поиск канала...">
+            <select id="chListResp" class="curve-select">
+              <option value="">Все ответственные</option>
+            </select>
+            <select id="chListDay" class="curve-select">
+              <option value="">Все дни</option>
+            </select>
             <select id="chListSort" class="curve-select">
               <option value="behind">Сначала отстающие</option>
               <option value="fact">По факту ↓</option>
@@ -443,6 +449,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>
