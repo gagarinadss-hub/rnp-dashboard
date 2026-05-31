@@ -241,6 +241,22 @@ def create_launch_endpoint(body: dict):
     return {"id": launch_id, "status": "created"}
 
 
+@app.put("/api/launches/{launch_id}")
+def update_launch_endpoint(launch_id: int, body: dict):
+    """Обновить метаданные запуска (даты регистрации/мероприятия, название, план).
+    Принимает любое подмножество: name, reg_start, reg_end, event_date,
+    event_end_date, total_plan."""
+    from db import update_launch
+    allowed = {"name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan"}
+    fields = {k: v for k, v in body.items() if k in allowed}
+    if not fields:
+        raise HTTPException(400, "No updatable fields provided")
+    result = update_launch(launch_id, **fields)
+    if result is None:
+        raise HTTPException(404, "Launch not found")
+    return {"status": "ok", **result}
+
+
 @app.post("/api/launches/{launch_id}/activate")
 def activate_launch(launch_id: int):
     from db import set_active_launch

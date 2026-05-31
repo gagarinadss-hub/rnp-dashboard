@@ -899,7 +899,7 @@ def get_all_launches() -> list:
 def get_launch_detail(launch_id: int) -> dict:
     with get_db() as conn:
         l = conn.execute(
-            "SELECT id, name, reg_start, reg_end, event_date, total_plan, is_active FROM launches WHERE id=?",
+            "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active FROM launches WHERE id=?",
             (launch_id,)
         ).fetchone()
         if not l:
@@ -963,6 +963,7 @@ def get_launch_detail(launch_id: int) -> dict:
                 "reg_start":      l["reg_start"],
                 "reg_end":        l["reg_end"],
                 "event_date":     l["event_date"],
+                "event_end_date": l["event_end_date"],
                 "total_plan":     l["total_plan"],
                 "total_actual":   total_actual,
                 "completion_pct": completion_pct,
@@ -1143,3 +1144,28 @@ def create_launch(name: str, reg_start=None, reg_end=None, event_date=None,
                     (launch_id, ch_id, ch.get("plan", 0), ch.get("responsible", ""))
                 )
         return launch_id
+
+
+def update_launch(launch_id: int, **fields) -> dict:
+    """Точечное обновление метаданных запуска. Обновляются только переданные
+    поля из белого списка. Пустая строка трактуется как очистка (NULL).
+    Возвращает {id, updated:[...]} либо None, если запуск не найден."""
+    allowed = ("name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan")
+    sets, params, updated = [], [], []
+    for key in allowed:
+        if key in fields:
+            val = fields[key]
+            if isinstance(val, str) and val.strip() == "":
+                val = None
+            sets.append(f"{key}=?")
+            params.append(val)
+            updated.append(key)
+    if not sets:
+        return {"id": launch_id, "updated": []}
+    with get_db() as conn:
+        exists = conn.execute("SELECT id FROM launches WHERE id=?", (launch_id,)).fetchone()
+        if not exists:
+            return None
+        params.append(launch_id)
+        conn.execute(f"UPDATE launches SET {', '.join(sets)} WHERE id=?", params)
+    return {"id": launch_id, "updated": updated}
