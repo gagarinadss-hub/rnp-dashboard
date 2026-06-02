@@ -198,6 +198,7 @@ def run_import(launch_id: int) -> dict:
                          _pd(row['event_end_date'])) if d]
     window_end = max(_ends) if _ends else None
     skipped_out_of_window = 0
+    dropped_dups = 0   # сколько строк отброшено как дубли (один человек = одна рег.)
 
     def _day_num(dt):
         """Возвращает day_num (>=1) или None, если дата вне окна запуска."""
@@ -237,9 +238,29 @@ def run_import(launch_id: int) -> dict:
     # Основной лист
     try:
         ws_main = sh_new.worksheet(MAIN_SHEET_NAME)
-        for r in ws_main.get_all_values()[1:]:
+        all_main = ws_main.get_all_values()
+        hdr = [str(c).strip().lower() for c in all_main[0]] if all_main else []
+
+        # Колонка-идентификатор для дедупа: команда считает УНИКАЛЬНЫЕ
+        # регистрации (один человек = одна, первое вхождение).
+        def _find_id_col(header):
+            for nm in ('sb_id', 'user id', 'tg id', 'tg/vk/max id', 'телефон'):
+                if nm in header:
+                    return header.index(nm)
+            return 0
+        id_col = _find_id_col(hdr)
+        seen_ids: set[str] = set()
+
+        for r in all_main[1:]:
             if not any(c.strip() for c in r):
                 continue
+            # Дедуп по первому вхождению (лист отсортирован по дате входа).
+            uid = r[id_col].strip() if id_col < len(r) else ''
+            if uid:
+                if uid in seen_ids:
+                    dropped_dups += 1
+                    continue
+                seen_ids.add(uid)
             date_str = r[3].strip()  if len(r) > 3  else ''
             src      = r[8].strip()  if len(r) > 8  else ''
             med      = r[9].strip()  if len(r) > 9  else ''
@@ -341,11 +362,12 @@ def run_import(launch_id: int) -> dict:
         unmatched_list = []
         utm_stats_list = []
 
-    log.info(f'[importer] ✅ launch={launch_id}  всего={total}  записей={inserted}  пропущено={skipped}  вне_окна={skipped_out_of_window}  нераспред.меток={len(unmatched_list)}')
+    log.info(f'[importer] ✅ launch={launch_id}  всего={total}  записей={inserted}  дублей_отброшено={dropped_dups}  пропущено={skipped}  вне_окна={skipped_out_of_window}  нераспред.меток={len(unmatched_list)}')
     return {
         'launch_id':            launch_id,
         'total_registrations':  total,
         'db_records':           inserted,
+        'dropped_duplicates':   dropped_dups,
         'skipped_channels':     skipped,
         'skipped_out_of_window': skipped_out_of_window,
         'unmatched_labels':     len(unmatched_list),
