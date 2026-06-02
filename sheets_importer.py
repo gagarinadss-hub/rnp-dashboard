@@ -241,26 +241,34 @@ def run_import(launch_id: int) -> dict:
         all_main = ws_main.get_all_values()
         hdr = [str(c).strip().lower() for c in all_main[0]] if all_main else []
 
-        # Колонка-идентификатор для дедупа: команда считает УНИКАЛЬНЫЕ
-        # регистрации (один человек = одна, первое вхождение).
-        def _find_id_col(header):
-            for nm in ('sb_id', 'user id', 'tg id', 'tg/vk/max id', 'телефон'):
+        # Дедуп: команда считает УНИКАЛЬНЫЕ регистрации (один человек = одна,
+        # первое вхождение). Комбинированный ключ User ID + телефон: строка —
+        # дубль, если уже встречался ЕЁ User ID ИЛИ ЕЁ телефон. Это ловит и
+        # обычные повторы, и кросс-платформенные входы (один человек заходит
+        # с разных аккаунтов под одним телефоном).
+        def _find_col(header, *names):
+            for nm in names:
                 if nm in header:
                     return header.index(nm)
-            return 0
-        id_col = _find_id_col(hdr)
-        seen_ids: set[str] = set()
+            return None
+        id_col    = _find_col(hdr, 'sb_id', 'user id', 'tg id', 'tg/vk/max id')
+        phone_col = _find_col(hdr, 'телефон', 'phone')
+        if id_col is None:
+            id_col = 0
+        seen_ids:    set[str] = set()
+        seen_phones: set[str] = set()
 
         for r in all_main[1:]:
             if not any(c.strip() for c in r):
                 continue
             # Дедуп по первому вхождению (лист отсортирован по дате входа).
-            uid = r[id_col].strip() if id_col < len(r) else ''
-            if uid:
-                if uid in seen_ids:
-                    dropped_dups += 1
-                    continue
-                seen_ids.add(uid)
+            uid   = r[id_col].strip()    if (id_col    is not None and id_col    < len(r)) else ''
+            phone = r[phone_col].strip() if (phone_col is not None and phone_col < len(r)) else ''
+            if (uid and uid in seen_ids) or (phone and phone in seen_phones):
+                dropped_dups += 1
+                continue
+            if uid:   seen_ids.add(uid)
+            if phone: seen_phones.add(phone)
             date_str = r[3].strip()  if len(r) > 3  else ''
             src      = r[8].strip()  if len(r) > 8  else ''
             med      = r[9].strip()  if len(r) > 9  else ''
