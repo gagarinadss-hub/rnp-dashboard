@@ -1771,9 +1771,7 @@ thead .ch-grid-sticky { z-index: 4; }
 }
 
 /* ── KPI card accent variants ──────────────────────────────────────────── */
-.kpi-card--yesterday { border-left: 3px solid var(--warning); }
-.kpi-card--forecast  { border-left: 3px solid var(--ink); }
-.kpi-card--pace      { border-left: 3px solid var(--blue); }
+/* (forecast accent задан выше: мягкий голубой border-left + иконка) */
 
 /* ── Delta colors ──────────────────────────────────────────────────────── */
 .delta-up   { color: var(--success) !important; font-weight: 600; }
