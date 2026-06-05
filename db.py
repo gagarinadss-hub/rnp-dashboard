@@ -1477,10 +1477,12 @@ def aggregate_fact_from_raw(launch_id: int) -> dict:
     unknown_by_day {date:count}, unknown_total, rows_raw."""
     from collections import defaultdict
     with get_db() as conn:
+        # Порядок дедупа — по id (= порядок строк в таблице-источнике), как в
+        # старом агрегатном пути: «первое вхождение» = первая строка человека.
         rows = conn.execute(
             """SELECT external_row_id, phone, registration_date, channel_id
                FROM raw_registrations WHERE launch_id=?
-               ORDER BY registered_at, id""",
+               ORDER BY id""",
             (launch_id,)
         ).fetchall()
 
