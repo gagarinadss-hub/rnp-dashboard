@@ -1518,6 +1518,32 @@ def aggregate_fact_from_raw(launch_id: int) -> dict:
     }
 
 
+def build_raw_override(launch_id: int) -> dict | None:
+    """Override факта для дашборда из raw_registrations (дедуп). Формат как у
+    старого live_override: {channel_actuals:{name:count}, daily_actuals:{date:count}}.
+    None — если raw-строк для запуска нет (тогда дашборд считает по-старому)."""
+    agg = aggregate_fact_from_raw(launch_id)
+    if agg.get("rows_raw", 0) == 0:
+        return None
+    with get_db() as conn:
+        ch_rows = conn.execute(
+            "SELECT c.id, c.name FROM launch_channels lc JOIN channels c ON c.id=lc.channel_id "
+            "WHERE lc.launch_id=?", (launch_id,)
+        ).fetchall()
+    id2name = {r["id"]: r["name"] for r in ch_rows}
+
+    channel_actuals = {nm: 0 for nm in id2name.values()}   # все каналы запуска -> 0 базово
+    for cid, cnt in agg["by_channel"].items():
+        nm = id2name.get(cid)
+        if nm:
+            channel_actuals[nm] = channel_actuals.get(nm, 0) + cnt
+    # нераспознанные -> канал «без метки», если он привязан к запуску
+    if agg.get("unknown_total", 0) > 0 and "без метки" in channel_actuals:
+        channel_actuals["без метки"] = channel_actuals.get("без метки", 0) + agg["unknown_total"]
+
+    return {"channel_actuals": channel_actuals, "daily_actuals": agg["by_day"]}
+
+
 def get_unknown_utm(launch_id: int) -> list[dict]:
     """Неизвестные UTM запуска (raw_registrations с channel_id IS NULL),
     агрегированы. Сортировка: сначала частые, затем самые свежие."""

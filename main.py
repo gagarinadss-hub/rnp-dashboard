@@ -147,12 +147,12 @@ def _empty_dashboard() -> dict:
 
 def _active_dashboard() -> dict:
     """Единый источник правды дашборда: активный запуск из БД.
-    Google Sheets здесь не участвует — факт берётся из daily_registrations."""
-    from db import get_active_launch_id, get_dashboard_from_db
+    Факт — из raw_registrations (дедуп); план — сохранённый/ручной."""
+    from db import get_active_launch_id, get_dashboard_from_db, build_raw_override
     launch_id = get_active_launch_id()
     if not launch_id:
         return _empty_dashboard()
-    data = get_dashboard_from_db(launch_id)
+    data = get_dashboard_from_db(launch_id, live_override=build_raw_override(launch_id))
     return data or _empty_dashboard()
 
 
@@ -360,11 +360,10 @@ def _live_override_for(launch_id: int) -> dict | None:
 
 @app.get("/api/launches/{launch_id}/dashboard")
 def launch_dashboard(launch_id: int):
-    """DB-based dashboard. Единый источник правды: план и факт берутся из БД
-    (daily_plans + daily_registrations). Старый live-override отключён —
-    Google Sheets используется только импорт-сервисом для факта."""
-    from db import get_dashboard_from_db
-    data = get_dashboard_from_db(launch_id)
+    """DB-based dashboard. Факт берётся из raw_registrations (дедуп, override),
+    план — сохранённый/ручной из БД. Если raw-строк нет — fallback на агрегат."""
+    from db import get_dashboard_from_db, build_raw_override
+    data = get_dashboard_from_db(launch_id, live_override=build_raw_override(launch_id))
     if not data:
         raise HTTPException(404, "Launch not found")
     return data
