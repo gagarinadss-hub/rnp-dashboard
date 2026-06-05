@@ -72,16 +72,16 @@ def get_data(force: bool = False) -> dict:
 
 
 async def _import_loop():
-    """Фоновый цикл: импортирует рег. из Google Таблицы каждые IMPORT_TTL секунд."""
-    from sheets_importer import run_import
+    """Фоновый цикл: единый импорт-сервис каждые IMPORT_TTL секунд."""
+    from import_service import run_import_service
     from db import get_active_launch_id
     await asyncio.sleep(5)          # небольшая пауза после старта
     while True:
         try:
             launch_id = get_active_launch_id()
             if launch_id:
-                result = await asyncio.to_thread(run_import, launch_id)
-                log.info(f"[import_loop] {result}")
+                result = await asyncio.to_thread(run_import_service, launch_id, "auto")
+                log.info(f"[import_loop] {result.get('status')}")
             else:
                 log.info("[import_loop] нет активного запуска, пропускаю")
         except Exception as e:
@@ -180,17 +180,28 @@ def health():
 
 
 # ── Import endpoints ─────────────────────────────────────────────────────────
+# Ручной и авто-импорт идут через ОДИН сервис (import_service.run_import_service)
+# с защитой от параллельных запусков. Возвращаем агрегатный результат для
+# обратной совместимости (UI/smoke ожидают total_registrations).
+def _reimport(launch_id: int):
+    from import_service import run_import_service
+    res = run_import_service(launch_id, "manual")
+    if res.get("status") == "already_running":
+        return {"status": "already_running", "message": "Импорт уже выполняется"}
+    agg = res.get("aggregate") or {}
+    agg["_raw_import"] = res.get("raw")
+    return agg
+
+
 @app.post("/api/reimport")
 def reimport_active():
     """Ручной запуск импорта для активного запуска."""
-    from sheets_importer import run_import
     from db import get_active_launch_id
     launch_id = get_active_launch_id()
     if not launch_id:
         raise HTTPException(400, "Нет активного запуска")
     try:
-        result = run_import(launch_id)
-        return result
+        return _reimport(launch_id)
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -198,10 +209,8 @@ def reimport_active():
 @app.post("/api/launches/{launch_id}/reimport")
 def reimport_launch(launch_id: int):
     """Ручной запуск импорта для конкретного запуска."""
-    from sheets_importer import run_import
     try:
-        result = run_import(launch_id)
-        return result
+        return _reimport(launch_id)
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -215,14 +224,13 @@ def importer_status():
 # ── Raw import (Этап 3) — построчно в raw_registrations ──────────────────────
 @app.post("/api/import/google-sheets")
 def import_google_sheets(body: dict | None = None):
-    """Построчный идемпотентный импорт регистраций в raw_registrations.
-    Параллелен старому агрегатному пути; дашборд переключится в 5.1."""
-    from raw_import import import_registrations_from_sheets
+    """Единый импорт из Google Sheets (raw + агрегат) через общий сервис с локом."""
+    from import_service import run_import_service
     from db import get_active_launch_id
     body = body or {}
     launch_id = body.get("launch_id") or get_active_launch_id()
     try:
-        return import_registrations_from_sheets(launch_id=launch_id, source=body.get("source", "manual"))
+        return run_import_service(launch_id, source=body.get("source", "manual"))
     except Exception as e:
         raise HTTPException(500, str(e))
 
