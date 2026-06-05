@@ -242,6 +242,14 @@ def import_runs(limit: int = 20):
 
 
 # ── Unknown UTM (Этап 4) ─────────────────────────────────────────────────────
+@app.get("/api/launches/{launch_id}/raw-fact")
+def raw_fact(launch_id: int):
+    """Сверка (Задача 5.1): факт из raw_registrations с дедупом
+    (User ID + телефон). Для сравнения со старым дашбордом до переключения."""
+    from db import aggregate_fact_from_raw
+    return aggregate_fact_from_raw(launch_id)
+
+
 @app.get("/api/launches/{launch_id}/unknown-utm")
 def unknown_utm(launch_id: int):
     """Неизвестные UTM запуска (raw_registrations с channel_id IS NULL),

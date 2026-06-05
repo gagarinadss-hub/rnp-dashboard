@@ -88,6 +88,7 @@ def init_db():
             "ALTER TABLE launch_channels ADD COLUMN plan_total INTEGER DEFAULT 0",
             "ALTER TABLE launch_channels ADD COLUMN created_at TEXT",
             "ALTER TABLE launch_channels ADD COLUMN updated_at TEXT",
+            "ALTER TABLE raw_registrations ADD COLUMN phone TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -169,6 +170,15 @@ def init_db():
         # Зеркалим plan -> plan_total (пока plan остаётся источником правды).
         try:
             conn.execute("UPDATE launch_channels SET plan_total = plan WHERE plan_total IS NULL OR plan_total = 0")
+        except Exception:
+            pass
+
+        # Бэкфилл телефона в raw_registrations из raw_payload (колонка 6).
+        try:
+            conn.execute(
+                "UPDATE raw_registrations SET phone = NULLIF(TRIM(json_extract(raw_payload,'$[6]')),'') "
+                "WHERE phone IS NULL"
+            )
         except Exception:
             pass
 
@@ -1460,6 +1470,52 @@ def resolve_channel_by_utm(conn, utm_source, utm_medium, platform):
     return _resolve([dict(r) for r in rows], utm_source, utm_medium, platform)
 
 
+def aggregate_fact_from_raw(launch_id: int) -> dict:
+    """Факт из raw_registrations с дедупом до уникального человека
+    (User ID + телефон, первое вхождение по времени). Возвращает:
+    total_unique, by_day {date:count}, by_channel {channel_id:count},
+    unknown_by_day {date:count}, unknown_total, rows_raw."""
+    from collections import defaultdict
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT external_row_id, phone, registration_date, channel_id
+               FROM raw_registrations WHERE launch_id=?
+               ORDER BY registered_at, id""",
+            (launch_id,)
+        ).fetchall()
+
+    seen_id, seen_ph = set(), set()
+    by_day = defaultdict(int)
+    by_channel = defaultdict(int)
+    unknown_by_day = defaultdict(int)
+    total = 0
+    for r in rows:
+        uid, ph = r["external_row_id"], r["phone"]
+        if (uid and uid in seen_id) or (ph and ph in seen_ph):
+            continue
+        if uid:
+            seen_id.add(uid)
+        if ph:
+            seen_ph.add(ph)
+        d = r["registration_date"]
+        by_day[d] += 1
+        total += 1
+        cid = r["channel_id"]
+        if cid is None:
+            unknown_by_day[d] += 1
+        else:
+            by_channel[cid] += 1
+
+    return {
+        "total_unique": total,
+        "rows_raw": len(rows),
+        "by_day": dict(sorted(by_day.items())),
+        "by_channel": dict(by_channel),
+        "unknown_by_day": dict(sorted(unknown_by_day.items())),
+        "unknown_total": sum(unknown_by_day.values()),
+    }
+
+
 def get_unknown_utm(launch_id: int) -> list[dict]:
     """Неизвестные UTM запуска (raw_registrations с channel_id IS NULL),
     агрегированы. Сортировка: сначала частые, затем самые свежие."""
@@ -1533,11 +1589,12 @@ def insert_raw_registration(conn, row_hash, normalized, launch_id, channel_id) -
     conn.execute(
         """INSERT OR IGNORE INTO raw_registrations
            (row_hash, external_row_id, registered_at, registration_date, launch_id,
-            utm_source, utm_medium, platform, channel_id, raw_payload, imported_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+            utm_source, utm_medium, platform, channel_id, phone, raw_payload, imported_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
         (row_hash, normalized.get("external_row_id"), normalized.get("registered_at"),
          normalized.get("registration_date"), launch_id, normalized.get("utm_source"),
          normalized.get("utm_medium"), normalized.get("platform"), channel_id,
+         normalized.get("phone"),
          json.dumps(normalized.get("raw_payload"), ensure_ascii=False))
     )
     return conn.total_changes > before

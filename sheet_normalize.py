@@ -19,6 +19,7 @@ from typing import Optional
 DEFAULT_COLUMNS = {
     "external_row_id": 0,   # User ID
     "registered_at": 3,     # Дата входа
+    "phone": 6,             # Телефон (для дедупа человека)
     "trigger": 7,
     "utm_source": 8,
     "utm_medium": 9,
@@ -105,6 +106,8 @@ def normalize_sheet_row(row, columns: Optional[dict] = None) -> dict:
     dt = _parse_dt(_cell(row, cols.get("registered_at")))
     raw_ext = _cell(row, cols.get("external_row_id"))
     ext = (str(raw_ext).strip() if raw_ext is not None else "") or None
+    raw_phone = _cell(row, cols.get("phone"))
+    phone = (str(raw_phone).strip() if raw_phone is not None else "") or None
 
     return {
         "registered_at":     dt.isoformat() if dt else None,
@@ -114,6 +117,7 @@ def normalize_sheet_row(row, columns: Optional[dict] = None) -> dict:
         "platform":          _norm_platform(_cell(row, cols.get("platform"))),
         "trigger":           _norm_utm(_cell(row, cols.get("trigger"))),
         "external_row_id":   ext,
+        "phone":             phone,
         "raw_payload":       list(row) if isinstance(row, (list, tuple)) else row,
     }
 
