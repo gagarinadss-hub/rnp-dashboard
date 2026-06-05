@@ -1460,6 +1460,72 @@ def resolve_channel_by_utm(conn, utm_source, utm_medium, platform):
     return _resolve([dict(r) for r in rows], utm_source, utm_medium, platform)
 
 
+def get_unknown_utm(launch_id: int) -> list[dict]:
+    """Неизвестные UTM запуска (raw_registrations с channel_id IS NULL),
+    агрегированы. Сортировка: сначала частые, затем самые свежие."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT utm_source, utm_medium, platform, COUNT(*) AS cnt,
+                      MIN(registered_at) AS first_seen, MAX(registered_at) AS last_seen
+               FROM raw_registrations
+               WHERE launch_id=? AND channel_id IS NULL
+               GROUP BY utm_source, utm_medium, platform
+               ORDER BY cnt DESC, last_seen DESC""",
+            (launch_id,)
+        ).fetchall()
+    return [{
+        "utmSource": r["utm_source"], "utmMedium": r["utm_medium"], "platform": r["platform"],
+        "count": r["cnt"], "firstSeenAt": r["first_seen"], "lastSeenAt": r["last_seen"],
+    } for r in rows]
+
+
+def assign_utm_to_channel(utm_source, utm_medium, platform,
+                          channel_id=None, channel_name=None) -> dict:
+    """Назначить UTM каналу: upsert в utm_mappings + перераспределить уже
+    импортированные raw_registrations с этой меткой. Возвращает updated_rows.
+    platform='' (или None) -> правило для любой платформы (и перераздача по всем)."""
+    from sheet_normalize import _norm_platform
+    s = (utm_source or "").strip().lower()
+    m = (utm_medium or "").strip().lower()
+    p = _norm_platform(platform) or ""
+
+    with get_db() as conn:
+        if channel_id is None and channel_name:
+            channel_id = upsert_channel(conn, channel_name.strip())
+        if channel_id is None:
+            return {"error": "channel_id/channel_name required", "updated_rows": 0}
+
+        conn.execute(
+            """INSERT INTO utm_mappings(utm_source, utm_medium, platform, channel_id, created_at, updated_at)
+               VALUES(?,?,?,?,datetime('now'),datetime('now'))
+               ON CONFLICT(utm_source, utm_medium, platform)
+               DO UPDATE SET channel_id=excluded.channel_id, updated_at=datetime('now')""",
+            (s, m, p, channel_id)
+        )
+
+        # перераспределяем уже импортированные строки
+        if p == "":
+            cur = conn.execute(
+                """UPDATE raw_registrations SET channel_id=?
+                   WHERE COALESCE(utm_source,'')=? AND COALESCE(utm_medium,'')=?""",
+                (channel_id, s, m)
+            )
+        else:
+            cur = conn.execute(
+                """UPDATE raw_registrations SET channel_id=?
+                   WHERE COALESCE(utm_source,'')=? AND COALESCE(utm_medium,'')=?
+                     AND COALESCE(platform,'')=?""",
+                (channel_id, s, m, p)
+            )
+        updated = cur.rowcount
+
+    return {
+        "updated_rows": updated,
+        "channel_id": channel_id,
+        "utm": {"utm_source": s, "utm_medium": m, "platform": p},
+    }
+
+
 def insert_raw_registration(conn, row_hash, normalized, launch_id, channel_id) -> bool:
     """Идемпотентная вставка строки факта. True — вставлено, False — дубль (row_hash уже есть)."""
     import json

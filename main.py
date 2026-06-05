@@ -241,6 +241,33 @@ def import_runs(limit: int = 20):
     return get_import_runs(limit)
 
 
+# ── Unknown UTM (Этап 4) ─────────────────────────────────────────────────────
+@app.get("/api/launches/{launch_id}/unknown-utm")
+def unknown_utm(launch_id: int):
+    """Неизвестные UTM запуска (raw_registrations с channel_id IS NULL),
+    частые -> свежие."""
+    from db import get_unknown_utm
+    return get_unknown_utm(launch_id)
+
+
+@app.post("/api/utm-mappings")
+def post_utm_mapping(body: dict):
+    """Назначить UTM каналу: создать/обновить правило + перераспределить
+    уже импортированные raw_registrations с этой меткой."""
+    from db import assign_utm_to_channel
+    cid = body.get("channel_id", body.get("channelId"))
+    cname = body.get("channel_name") or body.get("channelName")
+    if cid is None and not cname:
+        raise HTTPException(400, "channel_id или channel_name обязателен")
+    res = assign_utm_to_channel(
+        body.get("utm_source", body.get("utmSource")),
+        body.get("utm_medium", body.get("utmMedium")),
+        body.get("platform"),
+        channel_id=cid, channel_name=cname,
+    )
+    return {"status": "ok", **res}
+
+
 # ── Launches (SQLite) ───────────────────────────────────────────────────────
 @app.get("/api/launches")
 def list_launches():
