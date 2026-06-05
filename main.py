@@ -392,6 +392,29 @@ def activate_launch(launch_id: int):
     return {"status": "ok"}
 
 
+@app.post("/api/launches/{launch_id}/regenerate-plan")
+def regenerate_plan_endpoint(launch_id: int, body: dict | None = None):
+    """Сгенерировать дневной план из истории и сохранить новую active-версию."""
+    from db import regenerate_plan
+    body = body or {}
+    res = regenerate_plan(
+        launch_id,
+        mode=body.get("mode", "window_index"),
+        history_limit=int(body.get("history_limit", 10)),
+    )
+    if res is None:
+        raise HTTPException(404, "Launch not found")
+    return {"status": "ok", **res}
+
+
+@app.get("/api/launches/{launch_id}/daily-plan")
+def get_daily_plan_endpoint(launch_id: int):
+    """Активная версия сохранённого дневного плана + method_snapshot
+    (на какой истории построен план)."""
+    from db import get_active_daily_plan
+    return get_active_daily_plan(launch_id)
+
+
 @app.put("/api/launches/{launch_id}/plan-curve")
 def set_plan_curve(launch_id: int, body: dict):
     """Shape the plan-by-day curve for a launch.

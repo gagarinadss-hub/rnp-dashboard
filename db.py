@@ -1648,11 +1648,135 @@ def create_launch(name: str, reg_start=None, reg_end=None, event_date=None,
             for ch in channels:
                 ch_id = upsert_channel(conn, ch["name"])
                 conn.execute(
-                    """INSERT OR REPLACE INTO launch_channels(launch_id, channel_id, plan, responsible)
-                       VALUES(?,?,?,?)""",
-                    (launch_id, ch_id, ch.get("plan", 0), ch.get("responsible", ""))
+                    """INSERT OR REPLACE INTO launch_channels(launch_id, channel_id, plan, plan_total, responsible)
+                       VALUES(?,?,?,?,?)""",
+                    (launch_id, ch_id, ch.get("plan", 0), ch.get("plan", 0), ch.get("responsible", ""))
                 )
-        return launch_id
+
+    # После создания — генерируем и сохраняем версию дневного плана из истории.
+    # Не критично: ошибка генерации не должна ломать создание запуска.
+    try:
+        regenerate_plan(launch_id)
+    except Exception as e:
+        print(f"[create_launch] не удалось сгенерировать план для {launch_id}: {e}")
+    return launch_id
+
+
+def save_plan_version(launch_id: int, daily_plan_rows: list, method_snapshot: dict | None = None) -> dict:
+    """Сохранить новую версию дневного плана. Новая версия становится active,
+    старые остаются в БД (is_active_version=0). daily_plan_rows — список dict
+    с ключами channel_id/channelId, date, day_index/dayIndex, plan_count/planCount,
+    plan_share/planShare, curve_source/curveSource."""
+    import json
+
+    def g(r, *keys, default=None):
+        for k in keys:
+            if isinstance(r, dict) and k in r and r[k] is not None:
+                return r[k]
+            v = getattr(r, k, None)
+            if v is not None:
+                return v
+        return default
+
+    snap = json.dumps(method_snapshot, ensure_ascii=False) if method_snapshot is not None else None
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(plan_version),0) AS m FROM daily_plans WHERE launch_id=?",
+            (launch_id,)
+        ).fetchone()
+        new_version = (row["m"] or 0) + 1
+        conn.execute("UPDATE daily_plans SET is_active_version=0 WHERE launch_id=?", (launch_id,))
+        for r in daily_plan_rows:
+            conn.execute(
+                """INSERT INTO daily_plans
+                   (launch_id, channel_id, date, day_index, plan_count, plan_share,
+                    plan_version, is_active_version, curve_source, method_snapshot, created_at)
+                   VALUES (?,?,?,?,?,?,?,1,?,?,datetime('now'))""",
+                (launch_id, g(r, "channel_id", "channelId"), g(r, "date"),
+                 g(r, "day_index", "dayIndex"), g(r, "plan_count", "planCount", default=0),
+                 g(r, "plan_share", "planShare", default=0.0), new_version,
+                 g(r, "curve_source", "curveSource", default=""), snap)
+            )
+    return {"launch_id": launch_id, "plan_version": new_version, "rows": len(daily_plan_rows)}
+
+
+def regenerate_plan(launch_id: int, mode: str = "window_index", history_limit: int = 10) -> dict | None:
+    """Сгенерировать дневной план из истории и сохранить как новую active-версию.
+    Возвращает сводку + method_snapshot (mode, historyLaunchIds, fallbackUsed)."""
+    import planning_engine as pe
+    from datetime import datetime, timezone
+
+    with get_db() as conn:
+        l = conn.execute(
+            "SELECT id, reg_start, reg_end, event_date, total_plan FROM launches WHERE id=?",
+            (launch_id,)
+        ).fetchone()
+        if not l:
+            return None
+        ch_rows = conn.execute(
+            "SELECT channel_id, COALESCE(plan_total, plan, 0) AS pt FROM launch_channels WHERE launch_id=?",
+            (launch_id,)
+        ).fetchall()
+
+    launch = pe.LaunchInput.from_dict({
+        "id": launch_id, "regStart": l["reg_start"], "regEnd": l["reg_end"],
+        "eventDate": l["event_date"], "totalPlan": l["total_plan"],
+    })
+    channel_plans = [pe.ChannelPlanInput(channel_id=r["channel_id"], plan_total=r["pt"]) for r in ch_rows]
+    hist_dicts = get_history_launches(exclude_launch_id=launch_id, limit=history_limit)
+    history = [pe.HistoryLaunchInput.from_dict(h) for h in hist_dicts]
+    opts = pe.PlanOptions(mode=mode, history_limit=history_limit)
+
+    rows = pe.generate_daily_plan(launch, channel_plans, history, opts)
+    fallback_used = bool(rows) and rows[0].curve_source != "history"
+    snapshot = {
+        "mode": mode,
+        "historyLaunchIds": [h["launchId"] for h in hist_dicts],
+        "fallbackUsed": fallback_used,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    res = save_plan_version(launch_id, [r.to_dict() for r in rows], snapshot)
+    res.update({
+        "channels": len(channel_plans),
+        "days": len({r.date for r in rows}),
+        "fallback_used": fallback_used,
+        "history_launch_ids": snapshot["historyLaunchIds"],
+    })
+    return res
+
+
+def get_active_daily_plan(launch_id: int) -> dict:
+    """Активная версия дневного плана запуска + method_snapshot.
+    Используется для инспекции (на какой истории построен план);
+    потребление дашбордом — Задача 5.1."""
+    import json
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT channel_id, date, day_index, plan_count, plan_share,
+                      plan_version, curve_source, method_snapshot
+               FROM daily_plans
+               WHERE launch_id=? AND is_active_version=1
+               ORDER BY channel_id, day_index""",
+            (launch_id,)
+        ).fetchall()
+    if not rows:
+        return {"launch_id": launch_id, "plan_version": None, "rows": [], "method_snapshot": None}
+    snap = rows[0]["method_snapshot"]
+    try:
+        snap = json.loads(snap) if snap else None
+    except Exception:
+        pass
+    return {
+        "launch_id": launch_id,
+        "plan_version": rows[0]["plan_version"],
+        "method_snapshot": snap,
+        "rows": [
+            {"channel_id": r["channel_id"], "date": r["date"], "day_index": r["day_index"],
+             "plan_count": r["plan_count"], "plan_share": r["plan_share"],
+             "curve_source": r["curve_source"]}
+            for r in rows
+        ],
+    }
 
 
 def update_launch(launch_id: int, **fields) -> dict:
