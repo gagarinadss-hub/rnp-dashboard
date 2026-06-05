@@ -242,6 +242,17 @@ def import_runs(limit: int = 20):
 
 
 # ── Unknown UTM (Этап 4) ─────────────────────────────────────────────────────
+@app.post("/api/launches/{launch_id}/reresolve-raw")
+def reresolve_raw(launch_id: int):
+    """Переразобрать каналы у уже импортированных raw_registrations
+    (после расширения правил резолва)."""
+    from raw_import import reresolve_raw_channels
+    try:
+        return reresolve_raw_channels(launch_id)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @app.get("/api/launches/{launch_id}/raw-fact")
 def raw_fact(launch_id: int):
     """Сверка (Задача 5.1): факт из raw_registrations с дедупом

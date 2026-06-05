@@ -24,6 +24,53 @@ log = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent
 
 
+def _resolve_channel(conn, normalized, trigger, mapping, db_map):
+    """Канал для строки: сначала utm_mappings (новый путь), затем fallback на
+    старый резолвер sheets_importer._resolve (хардкод-правила + Справочник).
+    Возвращает channel_id или None (только для настоящих 'без метки')."""
+    cid = db.resolve_channel_by_utm(conn, normalized.get("utm_source"),
+                                    normalized.get("utm_medium"), normalized.get("platform"))
+    if cid is not None:
+        return cid
+    from sheets_importer import _resolve
+    name = _resolve(normalized.get("utm_source") or "", normalized.get("utm_medium") or "",
+                    trigger or "", normalized.get("platform") or "", mapping, db_map)
+    if name and name != "без метки":
+        return db.upsert_channel(conn, name)
+    return None
+
+
+def reresolve_raw_channels(launch_id) -> dict:
+    """Переразобрать канал у уже импортированных raw_registrations
+    (после расширения правил). Обновляет channel_id, возвращает счётчики."""
+    import gspread
+    from sheets_importer import _build_mapping, _load_db_mappings
+    gc = gspread.service_account(filename=str(BASE_DIR / "credentials.json"))
+    try:
+        mapping = _build_mapping(gc)
+    except Exception as e:
+        log.warning(f"[reresolve] Справочник недоступен: {e}")
+        mapping = {}
+    db_map = _load_db_mappings()
+
+    changed = resolved_now = 0
+    with db.get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, utm_source, utm_medium, platform, channel_id, "
+            "json_extract(raw_payload,'$[7]') AS trig FROM raw_registrations WHERE launch_id=?",
+            (launch_id,)
+        ).fetchall()
+        for r in rows:
+            n = {"utm_source": r["utm_source"], "utm_medium": r["utm_medium"], "platform": r["platform"]}
+            new_cid = _resolve_channel(conn, n, r["trig"], mapping, db_map)
+            if new_cid != r["channel_id"]:
+                conn.execute("UPDATE raw_registrations SET channel_id=? WHERE id=?", (new_cid, r["id"]))
+                changed += 1
+            if new_cid is not None:
+                resolved_now += 1
+    return {"launch_id": launch_id, "rows": len(rows), "changed": changed, "resolved": resolved_now}
+
+
 def _match_launch(windows, reg_date, prefer=None):
     """Найти launch по дате регистрации (reg_start <= date <= reg_end).
     Если подходит prefer — берём его; иначе активный; иначе первый; иначе None."""
@@ -59,6 +106,15 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
 
     try:
         gc = gspread.service_account(filename=str(BASE_DIR / "credentials.json"))
+        # контекст старого резолвера (fallback по каналам) — строим один раз
+        from sheets_importer import _build_mapping, _load_db_mappings
+        try:
+            mapping = _build_mapping(gc)
+        except Exception as e:
+            log.warning(f"[raw_import] Справочник недоступен: {e}")
+            mapping = {}
+        db_map = _load_db_mappings()
+
         ws = gc.open_by_key(sheet_id).worksheet(sheet_name)
         all_rows = ws.get_all_values()
         data_rows = all_rows[1:] if all_rows else []
@@ -71,9 +127,10 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
                 rows_read += 1
                 try:
                     n = normalize_sheet_row(r)
+                    trigger = r[7].strip() if len(r) > 7 else ""
                     lid = _match_launch(windows, n["registration_date"], prefer=launch_id)
                     rhash = build_registration_row_hash(n, launch_id=lid)
-                    chan = db.resolve_channel_by_utm(conn, n["utm_source"], n["utm_medium"], n["platform"])
+                    chan = _resolve_channel(conn, n, trigger, mapping, db_map)
                     if chan is None and (n["utm_source"] or n["utm_medium"] or n["platform"]):
                         unknown.add((n["utm_source"], n["utm_medium"], n["platform"]))
                     if db.insert_raw_registration(conn, rhash, n, lid, chan):
