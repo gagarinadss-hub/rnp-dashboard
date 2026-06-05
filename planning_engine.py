@@ -282,6 +282,66 @@ def allocate_integer_plan(total: int, shares: list[float]) -> list[int]:
     return base
 
 
+def calculate_forecast(plan_by_day: list, actual_by_day: list, days_elapsed: int) -> dict:
+    """Единый прогноз по дневным план/факт. days_elapsed — сколько дней прошло
+    (включая сегодня). Возвращает план/факт всего и «к дате», pace и прогноз.
+
+    Формулы:
+        planTotal      = sum(planByDay)
+        actualTotal    = sum(actualByDay)
+        planToDate     = sum(planByDay[:days_elapsed])
+        actualToDate   = sum(actualByDay[:days_elapsed])
+        completionPct  = actualTotal / planTotal
+        pacePct        = actualToDate / planToDate
+        expectedShare  = planToDate / planTotal
+        forecastTotal  = actualToDate / expectedShare
+        forecastPct    = forecastTotal / planTotal
+
+    Правила: planTotal=0 -> проценты/прогноз None; expectedShare=0 -> forecastTotal None;
+    после конца запуска forecastTotal = actualTotal; до старта прогноз None.
+    Проценты округляются единообразно (1 знак).
+    """
+    n = len(plan_by_day)
+    de = max(0, min(days_elapsed, n))
+
+    plan_total = sum(plan_by_day)
+    actual_total = sum(actual_by_day)
+    plan_to_date = sum(plan_by_day[:de])
+    actual_to_date = sum(actual_by_day[:de])
+
+    def pct(x):
+        return round(x * 100, 1)
+
+    completion_pct = pct(actual_total / plan_total) if plan_total > 0 else None
+    pace_pct = pct(actual_to_date / plan_to_date) if plan_to_date > 0 else None
+    expected_share = (plan_to_date / plan_total) if plan_total > 0 else None
+
+    if de >= n and n > 0:
+        # запуск завершён — прогноз = накопленный факт
+        forecast_total = actual_total
+    elif de <= 0:
+        # до старта — проекции нет
+        forecast_total = None
+    elif expected_share and expected_share > 0:
+        forecast_total = round(actual_to_date / expected_share)
+    else:
+        forecast_total = None
+
+    forecast_pct = pct(forecast_total / plan_total) if (forecast_total is not None and plan_total > 0) else None
+
+    return {
+        "planTotal": plan_total,
+        "actualTotal": actual_total,
+        "planToDate": plan_to_date,
+        "actualToDate": actual_to_date,
+        "completionPct": completion_pct,
+        "pacePct": pace_pct,
+        "expectedShare": expected_share,
+        "forecastTotal": forecast_total,
+        "forecastPct": forecast_pct,
+    }
+
+
 def _date_range(reg_start, reg_end) -> list[str]:
     """ISO-даты от reg_start до reg_end включительно. [] если окно некорректно."""
     from datetime import timedelta

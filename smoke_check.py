@@ -126,6 +126,12 @@ def check_payload_invariants(base, active_id, dash):
     else:
         check("sum(channel.plan) == total_plan", True)
 
+    # 5.3 контракт: unknownUtm — массив, поля прогноза присутствуют
+    check("unknownUtm — массив", isinstance(dash.get("unknownUtm"), list),
+          f"type={type(dash.get('unknownUtm')).__name__}")
+    for fld in ("planToDate", "actualToDate", "pacePct", "forecastTotal", "forecastPct"):
+        check(f"overview.{fld} присутствует", fld in o)
+
 
 # ── 4. идемпотентность импорта ──────────────────────────────────────────────
 def check_import_idempotent(base, active_id):

@@ -203,6 +203,47 @@ ok("5-дневное окно: сумма == 100", sum(r.plan_count for r in row
 empty_launch = pe.LaunchInput(id=1, reg_start=None, reg_end=None, event_date=None, total_plan=0)
 ok("некорректное окно -> []", pe.generate_daily_plan(empty_launch, chans, hist3) == [])
 
+# ── 10. calculate_forecast ──────────────────────────────────────────────────
+print("[10] calculate_forecast")
+F = pe.calculate_forecast
+
+# до старта (days_elapsed=0)
+r = F([100, 100, 100], [0, 0, 0], 0)
+ok("до старта: forecastTotal None", r["forecastTotal"] is None, str(r["forecastTotal"]))
+ok("до старта: actualToDate 0", r["actualToDate"] == 0)
+ok("до старта: completionPct 0", r["completionPct"] == 0.0, str(r["completionPct"]))
+
+# первый день: план [100,100,100], факт день1=120 -> опережение
+r = F([100, 100, 100], [120, 0, 0], 1)
+ok("день1: planToDate 100", r["planToDate"] == 100)
+ok("день1: actualToDate 120", r["actualToDate"] == 120)
+ok("день1: pacePct 120", r["pacePct"] == 120.0, str(r["pacePct"]))
+ok("день1: expectedShare 1/3", abs(r["expectedShare"] - 1/3) < 1e-9)
+ok("день1: forecastTotal 360 (120/(1/3))", r["forecastTotal"] == 360, str(r["forecastTotal"]))
+ok("день1: forecastPct 120", r["forecastPct"] == 120.0, str(r["forecastPct"]))
+
+# середина: план [100,100,100]=300, факт [90,90,0], прошло 2 дня
+r = F([100, 100, 100], [90, 90, 0], 2)
+ok("середина: actualToDate 180", r["actualToDate"] == 180)
+ok("середина: forecastTotal 270 (180/(200/300))", r["forecastTotal"] == 270, str(r["forecastTotal"]))
+
+# после окончания: прошло >= дней -> forecastTotal = actualTotal
+r = F([100, 100, 100], [90, 90, 80], 3)
+ok("после конца: forecastTotal = actualTotal 260", r["forecastTotal"] == 260, str(r["forecastTotal"]))
+r2 = F([100, 100, 100], [90, 90, 80], 5)
+ok("days_elapsed>дней: forecastTotal = actualTotal", r2["forecastTotal"] == 260)
+
+# planTotal = 0 -> проценты/прогноз None
+r = F([0, 0, 0], [0, 0, 0], 2)
+ok("planTotal 0: completionPct None", r["completionPct"] is None)
+ok("planTotal 0: forecastTotal None", r["forecastTotal"] is None)
+ok("planTotal 0: pacePct None", r["pacePct"] is None)
+
+# actual = 0 в середине -> forecastTotal 0
+r = F([100, 100, 100], [0, 0, 0], 2)
+ok("actual 0: forecastTotal 0", r["forecastTotal"] == 0, str(r["forecastTotal"]))
+ok("actual 0: completionPct 0", r["completionPct"] == 0.0)
+
 # ── итог ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 46)
 print(f"ИТОГ: {_PASS} PASS, {_FAIL} FAIL")

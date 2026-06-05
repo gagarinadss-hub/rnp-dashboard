@@ -1032,6 +1032,10 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             key=lambda x: x["pct"]
         )[:3]
 
+        # Единый прогноз (Задача 5.2/5.3) — те же формулы для overview и каналов.
+        from planning_engine import calculate_forecast
+        _fc = calculate_forecast(daily_plan_list, daily_total_actual, days_elapsed)
+
         overview = {
             "launch_id":        launch_id,
             "launch_name":      l["name"],
@@ -1055,6 +1059,13 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             "plan_curve_used":  plan_curve_used,
             "plan_curve_ref":   l["plan_curve_ref"],
             "plan_curve_mode":  plan_curve_mode,
+            # Стандартный контракт прогноза (camelCase)
+            "planToDate":       _fc["planToDate"],
+            "actualToDate":     _fc["actualToDate"],
+            "pacePct":          _fc["pacePct"],
+            "forecastTotal":    _fc["forecastTotal"],
+            "forecastPct":      _fc["forecastPct"],
+            "completionPct":    _fc["completionPct"],
             "last_updated":     datetime.now().isoformat(),
             "_source":          "db",
         }
@@ -1083,6 +1094,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             },
             "channels": channels,
             "forecast": forecast,
+            "unknownUtm": get_unknown_utm(launch_id),
             "alerts":   compute_alerts(overview, channels, forecast),
             "best_channels": [{"name": c["name"], "pct": c["pct"], "actual": c["actual"]} for c in best_channels],
             "lag_channels":  [{"name": c["name"], "pct": c["pct"], "plan": c["plan"], "actual": c["actual"]} for c in lag_channels],
