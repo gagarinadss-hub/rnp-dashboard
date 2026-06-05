@@ -247,8 +247,39 @@ def build_plan_curve(history_launches: list[HistoryLaunchInput],
 
 def allocate_integer_plan(total: int, shares: list[float]) -> list[int]:
     """Раскладывает целое total по долям shares в целые числа без потери суммы.
-    Реализация — Задача 2.3."""
-    raise NotImplementedError("allocate_integer_plan: реализуется в задаче 2.3")
+
+    Метод наибольшего остатка:
+      1. raw = total * share / sum(shares).
+      2. base = floor(raw).
+      3. remainder = total - sum(base).
+      4. remainder раздаём дням с самыми большими дробными частями.
+
+    Гарантии: len(result) == len(shares); sum(result) == total ровно;
+    все значения >= 0. Граничные: total<=0 -> нули; пустые shares -> [];
+    отрицательные доли трактуются как 0; нулевая сумма долей -> равномерно.
+    """
+    import math
+    n = len(shares)
+    if n == 0:
+        return []
+    if total <= 0:
+        return [0] * n
+
+    cl = [max(0.0, s) for s in shares]
+    s_sum = sum(cl)
+    if s_sum <= 0:
+        cl = [1.0] * n          # равномерно, если доли вырождены
+        s_sum = float(n)
+
+    raw = [total * s / s_sum for s in cl]
+    base = [math.floor(r) for r in raw]
+    remainder = total - sum(base)   # в диапазоне [0, n)
+
+    # индексы по убыванию дробной части (ties -> по исходному порядку)
+    order = sorted(range(n), key=lambda i: raw[i] - base[i], reverse=True)
+    for k in range(remainder):
+        base[order[k % n]] += 1
+    return base
 
 
 def generate_daily_plan(launch: LaunchInput,

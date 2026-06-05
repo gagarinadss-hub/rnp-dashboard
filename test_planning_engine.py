@@ -109,6 +109,46 @@ sh = pe.build_plan_curve([sparse], ["a", "b", "c"])
 common_invariants("sparse", sh, 3)
 ok("sparse: день2 доля == 0", approx(sh[1], 0.0), detail=str([round(x, 4) for x in sh]))
 
+# ── 8. allocate_integer_plan ────────────────────────────────────────────────
+print("[8] allocate_integer_plan")
+alloc = pe.allocate_integer_plan
+
+# total 0
+r = alloc(0, [0.5, 0.3, 0.2])
+ok("total 0 -> все нули", r == [0, 0, 0], str(r))
+
+# total меньше числа дней
+r = alloc(2, [0.5, 0.3, 0.2])
+ok("total 2 на 3 дня: сумма == 2", sum(r) == 2, str(r))
+ok("total 2 на 3 дня: длина 3, без отриц.", len(r) == 3 and all(x >= 0 for x in r), str(r))
+
+# total 1496 на 3 дня по кривой 0.4667/0.4667/0.0667
+r = alloc(1496, [0.4667, 0.4667, 0.0667])
+ok("1496 на 3 дня: сумма == 1496", sum(r) == 1496, str(r))
+ok("1496 на 3 дня: ≈ [698,698,100]", r == [698, 698, 100], str(r))
+
+# пустые shares
+ok("пустые shares -> []", alloc(100, []) == [])
+
+# доли с суммой != 1 (ненормированные)
+r = alloc(100, [2, 1, 1])
+ok("ненормированные доли: сумма == 100", sum(r) == 100, str(r))
+ok("ненормированные [2,1,1] -> [50,25,25]", r == [50, 25, 25], str(r))
+
+# вырожденные доли (все 0) -> равномерно
+r = alloc(10, [0, 0, 0, 0])
+ok("нулевые доли: сумма == 10, равномерно", sum(r) == 10 and max(r) - min(r) <= 1, str(r))
+
+# инвариант: сумма всегда == total, без отрицательных (перебор)
+bad = []
+for total in [0, 1, 2, 7, 13, 100, 1496, 9999]:
+    for shares in ([0.4667, 0.4667, 0.0667], [0.1, 0.2, 0.3, 0.4],
+                   [1.0], [0.33, 0.33, 0.34], [0.5, 0.5]):
+        rr = pe.allocate_integer_plan(total, shares)
+        if sum(rr) != total or len(rr) != len(shares) or any(x < 0 for x in rr):
+            bad.append((total, shares, rr))
+ok("перебор: сумма==total, длина, без отриц.", not bad, f"провалов: {len(bad)} {bad[:2]}")
+
 # ── итог ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 46)
 print(f"ИТОГ: {_PASS} PASS, {_FAIL} FAIL")
