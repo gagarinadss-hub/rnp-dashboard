@@ -1308,6 +1308,103 @@ def get_all_launches() -> list:
         return result
 
 
+def get_history_launches(exclude_launch_id=None, limit: int = 10,
+                         min_actual: int = 1, completed_only: bool = False) -> list[dict]:
+    """История прошлых запусков в формате для planning_engine.
+
+    Для каждого запуска возвращает:
+        launchId, name, regStart, regEnd, eventDate, totalActual,
+        dailyActual: [{date, count}],
+        channels:    [{channelId, dailyActual: [{date, count}]}]
+
+    Фильтры:
+      - исключить exclude_launch_id (обычно текущий запуск);
+      - исключить запуски с totalActual < min_actual (по умолчанию <=0);
+      - completed_only=True — только запуски, у которых reg_end в прошлом;
+      - сортировка от свежих к старым, не больше limit запусков.
+
+    Дата дня считается из reg_start + (day_num-1). Источник правды факта —
+    daily_registrations: строки channel_id IS NULL (агрегат) приоритетнее,
+    иначе суммируем по каналам.
+    """
+    from datetime import datetime, timedelta, date as _date
+
+    def _day_to_date(reg_start, day_num):
+        if not reg_start:
+            return None
+        try:
+            d0 = datetime.fromisoformat(reg_start).date()
+        except Exception:
+            return None
+        return (d0 + timedelta(days=day_num - 1)).isoformat()
+
+    today = _date.today().isoformat()
+
+    with get_db() as conn:
+        launches = conn.execute(
+            "SELECT id, name, reg_start, reg_end, event_date FROM launches "
+            "ORDER BY date(reg_start) DESC, id DESC"
+        ).fetchall()
+
+        result = []
+        for l in launches:
+            lid = l["id"]
+            if exclude_launch_id is not None and lid == exclude_launch_id:
+                continue
+            if completed_only and l["reg_end"] and l["reg_end"] >= today:
+                continue
+
+            # дневной агрегат: сначала channel_id IS NULL, иначе сумма по каналам
+            null_rows = conn.execute(
+                "SELECT day_num, count FROM daily_registrations "
+                "WHERE launch_id=? AND channel_id IS NULL ORDER BY day_num", (lid,)
+            ).fetchall()
+            if null_rows:
+                day_total = {r["day_num"]: r["count"] for r in null_rows}
+            else:
+                agg = conn.execute(
+                    "SELECT day_num, COALESCE(SUM(count),0) AS s FROM daily_registrations "
+                    "WHERE launch_id=? GROUP BY day_num ORDER BY day_num", (lid,)
+                ).fetchall()
+                day_total = {r["day_num"]: r["s"] for r in agg}
+
+            total_actual = sum(day_total.values())
+            if total_actual < min_actual:
+                continue
+
+            daily_actual = [
+                {"date": _day_to_date(l["reg_start"], dn), "count": cnt}
+                for dn, cnt in sorted(day_total.items())
+            ]
+
+            # факт по каналам (только реальные channel_id)
+            ch_rows = conn.execute(
+                "SELECT channel_id, day_num, count FROM daily_registrations "
+                "WHERE launch_id=? AND channel_id IS NOT NULL ORDER BY channel_id, day_num", (lid,)
+            ).fetchall()
+            ch_map: dict[int, list] = {}
+            for r in ch_rows:
+                ch_map.setdefault(r["channel_id"], []).append(
+                    {"date": _day_to_date(l["reg_start"], r["day_num"]), "count": r["count"]}
+                )
+            channels = [{"channelId": cid, "dailyActual": days} for cid, days in ch_map.items()]
+
+            result.append({
+                "launchId":    lid,
+                "name":        l["name"],
+                "regStart":    l["reg_start"],
+                "regEnd":      l["reg_end"],
+                "eventDate":   l["event_date"],
+                "totalActual": total_actual,
+                "dailyActual": daily_actual,
+                "channels":    channels,
+            })
+            if len(result) >= limit:
+                break
+
+        return result
+
+
 def get_launch_detail(launch_id: int) -> dict:
     with get_db() as conn:
         l = conn.execute(
