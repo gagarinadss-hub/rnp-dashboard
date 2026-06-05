@@ -342,6 +342,44 @@ def calculate_forecast(plan_by_day: list, actual_by_day: list, days_elapsed: int
     }
 
 
+def forecast_from_curve(curve_shares: list, actual_by_day: list, days_elapsed: int):
+    """Прогноз итога ОТ ИСТОРИЧЕСКОЙ кривой (а не плановой): проецируем
+    накопленный факт через накопленную ИСТОРИЧЕСКУЮ долю к текущему дню.
+        forecastTotal = actualToDate / cumHistShareToDate
+    После конца -> фактический итог; до старта -> None; доля 0 -> None."""
+    n = len(curve_shares)
+    de = max(0, min(days_elapsed, n))
+    actual_total = sum(actual_by_day)
+    actual_to_date = sum(actual_by_day[:de])
+    if n > 0 and de >= n:
+        return actual_total
+    if de <= 0:
+        return None
+    cum = sum(curve_shares[:de])
+    if cum > 0:
+        return round(actual_to_date / cum)
+    return None
+
+
+def build_channel_curve(history_launches: list, channel_id, target_dates: list,
+                        options: Optional[PlanOptions] = None) -> list[float]:
+    """Историческая дневная кривая КОНКРЕТНОГО канала из истории (его подневный
+    факт по запускам). Если у канала нет истории — общая кривая по запускам."""
+    ch_hist = []
+    for h in history_launches:
+        for ch in h.channels:
+            if ch.channel_id == channel_id and ch.daily_actual:
+                tot = sum(p.count for p in ch.daily_actual)
+                if tot > 0:
+                    ch_hist.append(HistoryLaunchInput(
+                        launch_id=h.launch_id, reg_start=h.reg_start, reg_end=h.reg_end,
+                        event_date=h.event_date, total_actual=tot, daily_actual=ch.daily_actual,
+                    ))
+    if ch_hist:
+        return build_plan_curve(ch_hist, target_dates, options)
+    return build_plan_curve(history_launches, target_dates, options)  # fallback: общая кривая
+
+
 def _date_range(reg_start, reg_end) -> list[str]:
     """ISO-даты от reg_start до reg_end включительно. [] если окно некорректно."""
     from datetime import timedelta

@@ -244,6 +244,40 @@ r = F([100, 100, 100], [0, 0, 0], 2)
 ok("actual 0: forecastTotal 0", r["forecastTotal"] == 0, str(r["forecastTotal"]))
 ok("actual 0: completionPct 0", r["completionPct"] == 0.0)
 
+# ── 11. forecast_from_curve (история) ───────────────────────────────────────
+print("[11] forecast_from_curve — проекция по исторической кривой")
+FC = pe.forecast_from_curve
+# фронт-лоад: 60% в день1. факт день1=600 -> прогноз ~1000
+ft = FC([0.6, 0.3, 0.1], [600, 0, 0], 1)
+ok("фронт-лоад: 600 в день1 -> ~1000", ft == 1000, str(ft))
+# бэк-лоад: 20% в день1. тот же факт 600 -> прогноз 3000
+ft = FC([0.2, 0.3, 0.5], [600, 0, 0], 1)
+ok("бэк-лоад: 600 в день1 -> ~3000 (выше прогноз)", ft == 3000, str(ft))
+ok("после конца -> фактический итог", FC([0.6, 0.3, 0.1], [600, 300, 100], 3) == 1000)
+ok("до старта -> None", FC([0.6, 0.3, 0.1], [0, 0, 0], 0) is None)
+
+# ── 12. build_channel_curve — у канала своя кривая ──────────────────────────
+print("[12] build_channel_curve — отдельная кривая канала")
+hist_ch = [
+    pe.HistoryLaunchInput.from_dict({
+        "launchId": 1, "regStart": "2026-01-01", "regEnd": "2026-01-03",
+        "eventDate": "2026-01-03", "totalActual": 100,
+        "dailyActual": [{"date": "2026-01-01", "count": 10}, {"date": "2026-01-02", "count": 30}, {"date": "2026-01-03", "count": 60}],
+        "channels": [
+            {"channelId": 11, "dailyActual": [{"date": "2026-01-01", "count": 80}, {"date": "2026-01-02", "count": 15}, {"date": "2026-01-03", "count": 5}]},
+            {"channelId": 12, "dailyActual": [{"date": "2026-01-01", "count": 5}, {"date": "2026-01-02", "count": 15}, {"date": "2026-01-03", "count": 80}]},
+        ],
+    }),
+]
+c11 = pe.build_channel_curve(hist_ch, 11, ["a", "b", "c"])
+c12 = pe.build_channel_curve(hist_ch, 12, ["a", "b", "c"])
+ok("канал 11 фронт-лоад (день1 доля наибольшая)", c11[0] > c11[2], str([round(x, 3) for x in c11]))
+ok("канал 12 бэк-лоад (день3 доля наибольшая)", c12[2] > c12[0], str([round(x, 3) for x in c12]))
+ok("кривые каналов РАЗНЫЕ", c11 != c12)
+# канал без истории -> общая кривая (fallback), не падает
+cX = pe.build_channel_curve(hist_ch, 999, ["a", "b", "c"])
+ok("канал без истории -> общая кривая (сумма 1)", abs(sum(cX) - 1.0) < 1e-9)
+
 # ── итог ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 46)
 print(f"ИТОГ: {_PASS} PASS, {_FAIL} FAIL")
