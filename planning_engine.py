@@ -13,7 +13,12 @@ planning_engine.py — расчётное ядро дневного плана R
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
+
+# Фолбэк-кривая долей по дням (исторический профиль RNP), если истории нет.
+# Та же методология, что GLOBAL_DAY_PCTS в db.py — но без связи с БД.
+FALLBACK_DAY_SHARES = [0.066, 0.167, 0.197, 0.190, 0.212, 0.167, 0.001]
 
 
 # ── Опции расчёта ───────────────────────────────────────────────────────────
@@ -136,12 +141,108 @@ class DailyPlanOutput:
 
 
 # ── Каркас функций (реализация в 2.2–2.4) ───────────────────────────────────
+def _parse_date(s):
+    try:
+        return datetime.fromisoformat(s).date()
+    except Exception:
+        return None
+
+
+def _history_window_counts(h: HistoryLaunchInput) -> list[float]:
+    """Дневные counts по СОБСТВЕННОМУ окну регистрации запуска (день1..деньN).
+    Хвосты вне окна отбрасываются, пропуски = 0. [] если данных нет."""
+    pts = h.daily_actual or []
+    rs, re = _parse_date(h.reg_start), _parse_date(h.reg_end)
+    if rs and re and (re - rs).days >= 0:
+        L = (re - rs).days + 1
+        counts = [0.0] * L
+        for p in pts:
+            d = _parse_date(p.date)
+            if d and rs <= d <= re:
+                counts[(d - rs).days] += max(0, p.count or 0)
+    else:
+        counts = [max(0, p.count or 0) for p in pts]
+    return counts if sum(counts) > 0 else []
+
+
+def _cumulative_shares(counts: list[float]) -> list[float]:
+    """Накопительные доли в конце каждого дня: [0.1, 0.45, ..., 1.0]."""
+    total = sum(counts)
+    if total <= 0:
+        return []
+    cum, run = [], 0.0
+    for c in counts:
+        run += c
+        cum.append(run / total)
+    return cum  # длина L, cum[-1] == 1.0
+
+
+def _interp_cum_at(cum: list[float], x: float) -> float:
+    """Накопительная доля в позиции x∈[0,1]. Узлы: позиция 0 -> 0,
+    позиция k/L -> cum[k-1]. Между узлами — линейная интерполяция."""
+    L = len(cum)
+    if L == 0 or x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    pos = x * L
+    k_left = int(pos)
+    frac = pos - k_left
+    v_left = 0.0 if k_left == 0 else cum[k_left - 1]
+    k_right = k_left + 1
+    v_right = cum[k_right - 1] if k_right <= L else 1.0
+    return v_left + (v_right - v_left) * frac
+
+
 def build_plan_curve(history_launches: list[HistoryLaunchInput],
                      target_dates: list[str],
                      options: Optional[PlanOptions] = None) -> list[float]:
     """Доли регистраций по дням длиной len(target_dates), сумма == 1.0.
-    Реализация — Задача 2.2."""
-    raise NotImplementedError("build_plan_curve: реализуется в задаче 2.2")
+
+    Алгоритм (window_index):
+      1. По каждому history launch — дневные counts по его окну регистрации.
+      2. Перевести в накопительные доли (cum[-1] = 1.0).
+      3. Для каждого target-дня j позиция x = j/D.
+      4. Интерполировать накопительную долю запуска в этой позиции.
+      5. Усреднить накопительные доли всех запусков.
+      6. Перевести обратно в дневные доли (разности).
+      7. Нормировать сумму к 1.
+
+    Игнорирует запуски с totalActual <= 0 и без полезных данных.
+    Если истории нет — fallback-кривая. Доли всегда >= 0, сумма == 1.0.
+    """
+    D = len(target_dates)
+    if D <= 0:
+        return []
+
+    curves: list[list[float]] = []
+    for h in history_launches:
+        if (h.total_actual or 0) <= 0:      # игнорируем нулевой факт
+            continue
+        counts = _history_window_counts(h)
+        if counts:
+            curves.append(_cumulative_shares(counts))
+
+    if not curves:                          # fallback
+        curves = [_cumulative_shares(FALLBACK_DAY_SHARES)]
+
+    # усреднённая накопительная доля в позициях конца каждого target-дня
+    avg_cum = []
+    for j in range(1, D + 1):
+        x = j / D
+        vals = [_interp_cum_at(c, x) for c in curves]
+        avg_cum.append(sum(vals) / len(vals))
+
+    # дневные доли = разности накопительных (в позиции 0 накопительная = 0)
+    shares, prev = [], 0.0
+    for v in avg_cum:
+        shares.append(max(0.0, v - prev))
+        prev = v
+
+    s = sum(shares)
+    if s <= 0:
+        return [1.0 / D] * D
+    return [x / s for x in shares]
 
 
 def allocate_integer_plan(total: int, shares: list[float]) -> list[int]:
