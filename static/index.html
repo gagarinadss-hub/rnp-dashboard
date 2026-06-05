@@ -6,7 +6,7 @@
   <title>РНП Запусков</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=12">
+  <link rel="stylesheet" href="/style.css?v=13">
 </head>
 <body class="app-layout">
 
@@ -115,8 +115,8 @@
           </div>
         </div>
 
-        <!-- KPI row (2 essentials) -->
-        <div class="kpi-grid kpi-grid-2">
+        <!-- KPI row -->
+        <div class="kpi-grid kpi-grid-3">
           <div class="kpi-card kpi-card--plan">
             <div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
             <div class="kpi-body">
@@ -133,6 +133,14 @@
               <div class="kpi-sub" id="kpi-fact-pct">—% от плана</div>
             </div>
           </div>
+          <div class="kpi-card kpi-card--forecast">
+            <div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div>
+            <div class="kpi-body">
+              <div class="kpi-label">Прогноз финала</div>
+              <div class="kpi-value" id="kpi-forecast">—</div>
+              <div class="kpi-sub" id="kpi-forecast-sub">по истории 5 запусков</div>
+            </div>
+          </div>
         </div>
 
         <!-- Main chart (full width) -->
@@ -147,9 +155,11 @@
                 </select>
               </label>
               <div class="chart-legend">
-                <span><span class="dot" style="background:#B6E029"></span>Факт</span>
-                <span><span class="dot" style="background:#CBD8EE"></span>План</span>
-                <span><span class="dot" style="background:#5B8DEF"></span>Прогноз</span>
+                <span><span class="dot" style="background:#B6E029"></span>Факт/день</span>
+                <span><span class="dot" style="background:#CBD8EE"></span>План/день</span>
+                <span><span class="dot" style="background:#17191F"></span>Факт∑</span>
+                <span><span class="dot" style="background:#A8D91E"></span>План∑</span>
+                <span><span class="dot" style="background:#5B8DEF"></span>Прогноз∑</span>
               </div>
             </div>
           </div>
@@ -202,8 +212,8 @@
         <!-- Unmatched labels block -->
         <div class="card" id="unmatchedCard" style="display:none">
           <div class="card-head">
-            <h3>Нераспределённые метки</h3>
-            <span class="unmatched-hint">Назначьте канал и нажмите «Сохранить» — при следующем импорте метки автоматически попадут в нужный канал</span>
+            <h3>Нераспознанные метки</h3>
+            <span class="unmatched-hint">Назначьте канал — метки и старые регистрации с ними сразу перераспределятся, без переимпорта</span>
           </div>
           <div class="table-wrap">
             <table class="ch-table">
@@ -211,6 +221,7 @@
                 <tr>
                   <th>utm_source</th>
                   <th>utm_medium</th>
+                  <th>Платформа</th>
                   <th class="num">Кол-во</th>
                   <th>Канал</th>
                   <th></th>
@@ -220,7 +231,7 @@
             </table>
           </div>
           <div class="unmatched-footer">
-            <button class="btn-primary" id="saveAllMappingsBtn">💾 Сохранить и переимпортировать</button>
+            <button class="btn-primary" id="saveAllMappingsBtn">💾 Сохранить и перераспределить</button>
             <span id="saveMappingsStatus" style="font-size:13px;color:var(--text-sub);margin-left:12px"></span>
           </div>
         </div>
@@ -429,6 +440,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=10"></script>
+  <script src="/app.js?v=11"></script>
 </body>
 </html>

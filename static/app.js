@@ -178,6 +178,24 @@ function renderDashboard() {
   document.getElementById('hero-actual').textContent  = fmt(o.total_actual);
   document.getElementById('kpi-fact-pct').textContent = `${o.completion_pct}% от плана`;
 
+  // Прогноз финала (по истории последних 5 запусков)
+  const fcEl  = document.getElementById('kpi-forecast');
+  const fcSub = document.getElementById('kpi-forecast-sub');
+  if (fcEl) {
+    const ft = o.forecastTotal ?? f?.projected_total;
+    const fp = o.forecastPct   ?? f?.projected_pct;
+    if (notStarted || ft == null) {
+      fcEl.textContent = '—';
+      if (fcSub) fcSub.textContent = 'появится после старта';
+    } else {
+      fcEl.textContent = fmt(ft);
+      if (fcSub && fp != null) {
+        fcSub.textContent = `${fp}% от плана`;
+        fcSub.className = `kpi-sub ${fp >= 100 ? 'delta-up' : fp >= 80 ? '' : 'delta-down'}`;
+      }
+    }
+  }
+
   // ── Plan-curve selector ──────────────────────────────────────────────────
   renderPlanCurveSelect(o);
 
@@ -293,6 +311,20 @@ function renderMainChart(d, f, o) {
           type: 'bar', label: 'План (ежедн.)',
           data: d.daily_plan, backgroundColor: '#CBD8EE',
           borderRadius: 6, order: 4,
+        },
+        {
+          type: 'line', label: 'Факт (накопл.)',
+          data: d.cumulative_actual,
+          borderColor: '#17191F', backgroundColor: 'transparent',
+          tension: 0.4, pointRadius: 2, borderWidth: 2,
+          order: 2, yAxisID: 'y2',
+        },
+        {
+          type: 'line', label: 'План (накопл.)',
+          data: d.cumulative_plan,
+          borderColor: '#A8D91E', backgroundColor: 'transparent',
+          tension: 0.4, pointRadius: 0, borderWidth: 2,
+          order: 2, yAxisID: 'y2',
         },
         {
           type: 'line', label: 'Прогноз (накопл.)',
@@ -480,6 +512,24 @@ function sparklineHtml(daily, daysTotal, hlIdx) {
   }).join('')}</div>`;
 }
 
+// Прогноз итога канала + темп (опережение/отставание относительно плана)
+function forecastCell(c) {
+  const fc = c.forecast;
+  const pr = c.pace_ratio;
+  if (fc == null && pr == null) return '';
+  let paceHtml = '';
+  if (pr != null && pr > 0) {
+    const cls = pr >= 1 ? 'delta-up' : pr >= 0.7 ? '' : 'delta-down';
+    const arrow = pr >= 1 ? '↑' : '↓';
+    paceHtml = `<span class="ch-item-pace ${cls}">${arrow} ${Math.round(pr * 100)}% темп</span>`;
+  }
+  return `
+    <div class="ch-item-fc">
+      <span class="ch-item-fc-val">${fc != null ? '≈ ' + fmt(fc) : '—'}</span>
+      ${paceHtml}
+    </div>`;
+}
+
 function channelItemHtml(c, maxFact, dayIdx) {
   const { daysTotal } = chListState;
   const pct = c.pct ?? 0;
@@ -507,6 +557,7 @@ function channelItemHtml(c, maxFact, dayIdx) {
           ${dayTag}
           ${deltaStr ? `<span class="ch-item-delta ${deltaCls}">${deltaStr} вчера</span>` : ''}
         </div>
+        ${forecastCell(c)}
         <div class="ch-item-pctwrap">
           <div class="ch-item-bar"><div class="ch-item-fill ${fillCls}" style="width:${barW}%"></div></div>
           <span class="ch-pct ${cls}">${pct}%</span>
@@ -1144,20 +1195,11 @@ async function loadUnmatchedLabels() {
   if (!launchId || !card || !tbody) return;
 
   try {
-    const [labels, mappings] = await Promise.all([
-      fetch(`/api/launches/${launchId}/unmatched`).then(r => r.json()),
-      fetch('/api/label-mappings').then(r => r.json()),
-    ]);
+    const labels = await fetch(`/api/launches/${launchId}/unknown-utm`).then(r => r.json());
 
     if (!labels.length) {
       card.style.display = 'none';
       return;
-    }
-
-    // Index of already-saved mappings
-    const existingMap = {};
-    for (const m of mappings) {
-      existingMap[`${m.utm_source}|${m.utm_medium}`] = m.channel_name;
     }
 
     // Channel options from current dashState
@@ -1167,26 +1209,23 @@ async function loadUnmatchedLabels() {
     if (status) status.textContent = '';
 
     tbody.innerHTML = labels.map(l => {
-      const key      = `${l.utm_source}|${l.utm_medium}`;
-      const existing = existingMap[key] || '';
-      const opts     = ['', ...chNames].map(ch =>
-        `<option value="${ch}"${ch === existing ? ' selected' : ''}>${ch || '— не назначено —'}</option>`
+      const src = l.utmSource || '', med = l.utmMedium || '', plat = l.platform || '';
+      const opts = ['', ...chNames].map(ch =>
+        `<option value="${escapeHtml(ch)}">${ch ? escapeHtml(ch) : '— не назначено —'}</option>`
       ).join('');
-      const savedBadge = existing
-        ? `<span class="badge active" title="${existing}">сохранено</span>`
-        : '';
       return `
-        <tr class="${existing ? 'label-row-saved' : ''}">
-          <td><code class="label-code">${l.utm_source || '<em>пусто</em>'}</code></td>
-          <td><code class="label-code">${l.utm_medium || '<em>пусто</em>'}</code></td>
+        <tr>
+          <td><code class="label-code">${escapeHtml(src) || '<em>пусто</em>'}</code></td>
+          <td><code class="label-code">${escapeHtml(med) || '<em>пусто</em>'}</code></td>
+          <td><code class="label-code">${escapeHtml(plat) || '<em>—</em>'}</code></td>
           <td class="num">${fmt(l.count)}</td>
-          <td><select class="label-ch-select" data-src="${l.utm_source}" data-med="${l.utm_medium}">${opts}</select></td>
-          <td style="text-align:center">${savedBadge}</td>
+          <td><select class="label-ch-select" data-src="${escapeHtml(src)}" data-med="${escapeHtml(med)}" data-plat="${escapeHtml(plat)}">${opts}</select></td>
+          <td style="text-align:center"></td>
         </tr>`;
     }).join('');
 
   } catch (err) {
-    console.error('Ошибка загрузки нераспределённых меток:', err);
+    console.error('Ошибка загрузки нераспознанных меток:', err);
     if (card) card.style.display = 'none';
   }
 }
@@ -1199,47 +1238,37 @@ document.getElementById('saveAllMappingsBtn')?.addEventListener('click', async (
   btn.disabled    = true;
   status.textContent = 'Сохраняю маппинги...';
 
-  let saved = 0, errors = 0;
+  let saved = 0, errors = 0, moved = 0;
   for (const sel of selects) {
     const ch = sel.value;
     if (!ch) continue;
     try {
-      const res = await fetch('/api/label-mappings', {
-        method: 'PUT',
+      const res = await fetch('/api/utm-mappings', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ utm_source: sel.dataset.src, utm_medium: sel.dataset.med, channel_name: ch }),
+        body: JSON.stringify({
+          utm_source: sel.dataset.src, utm_medium: sel.dataset.med,
+          platform: sel.dataset.plat, channel_name: ch,
+        }),
       });
-      res.ok ? saved++ : errors++;
+      if (res.ok) { saved++; const j = await res.json(); moved += (j.updated_rows || 0); }
+      else errors++;
     } catch { errors++; }
   }
 
   if (!saved && !errors) {
-    status.textContent = 'Нет новых маппингов для сохранения';
+    status.textContent = 'Выберите канал хотя бы для одной метки';
     btn.disabled = false;
     return;
   }
 
-  if (errors > 0) {
-    status.textContent = `⚠ Сохранено: ${saved}, ошибок: ${errors}`;
-    btn.disabled = false;
-    return;
-  }
-
-  // Success — run reimport
-  status.textContent = `✅ Сохранено ${saved} маппингов. Переимпортирую...`;
-  const launchId = activeLaunchId || dashState?.overview?.launch_id;
-  if (launchId) {
-    try {
-      const r = await fetch(`/api/launches/${launchId}/reimport`, { method: 'POST' });
-      const d = await r.json();
-      await loadDashboard();
-      await loadUnmatchedLabels();
-      const left = document.querySelectorAll('#unmatchedBody tr').length;
-      status.textContent = `✅ Готово! ${fmt(d.total_registrations)} рег. импортировано${left ? `, ещё ${left} меток не распределено` : ', все метки распределены 🎉'}`;
-    } catch {
-      status.textContent = `✅ Маппинги сохранены. Нажмите ⬇ Импорт для обновления данных.`;
-    }
-  }
+  // Перераспределение мгновенное — просто обновляем дашборд и список
+  await loadDashboard();
+  await loadUnmatchedLabels();
+  const left = document.querySelectorAll('#unmatchedBody tr').length;
+  status.textContent = errors
+    ? `⚠ Назначено ${saved}, ошибок ${errors}`
+    : `✅ Назначено ${saved} меток, перераспределено ${fmt(moved)} рег.${left ? `, осталось ${left}` : ' — все распределены 🎉'}`;
   btn.disabled = false;
 });
 

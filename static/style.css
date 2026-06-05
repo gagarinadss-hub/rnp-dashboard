@@ -1662,6 +1662,23 @@ thead .ch-grid-sticky { z-index: 4; }
 }
 .detail-title-row h2 { margin: 0; }
 
+/* ── 3-column KPI grid (План + Факт + Прогноз) ─────────────────────────── */
+.kpi-grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) { .kpi-grid-3 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .kpi-grid-3 { grid-template-columns: 1fr; } }
+
+/* Карточка прогноза — мягкий голубой акцент (цвет линии прогноза) */
+.kpi-card--forecast { background: var(--card); border-left: 3px solid #9DBDF0; }
+.kpi-card--forecast .kpi-icon { background: #EAF1FC; color: #5B8DEF; }
+
+/* Прогноз + темп в строке канала */
+.ch-item-fc {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  flex: 0 0 96px; min-width: 0;
+}
+.ch-item-fc-val { font-size: 13px; font-weight: 700; color: #5B8DEF; white-space: nowrap; }
+.ch-item-pace { font-size: 11px; font-weight: 600; white-space: nowrap; }
+
 /* ── 2-column KPI grid (План + Факт) ───────────────────────────────────── */
 .kpi-grid-2 { grid-template-columns: 1fr 1fr; }
 @media (max-width: 640px) { .kpi-grid-2 { grid-template-columns: 1fr; } }
