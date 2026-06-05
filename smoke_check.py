@@ -145,10 +145,12 @@ def check_import_idempotent(base, active_id):
         return
     t1, t2 = r1.get("total_registrations"), r2.get("total_registrations")
     check("повторный импорт даёт тот же итог", t1 == t2, f"{t1} vs {t2}")
-    # факт на дашборде не должен прыгать между двумя импортами
+    # факт дашборда теперь из raw_registrations — сверяем с тем же источником
     _, dash = _http("GET", base, f"/api/launches/{active_id}/dashboard")
+    _, raw = _http("GET", base, f"/api/launches/{active_id}/raw-fact")
     fact = dash.get("overview", {}).get("total_actual")
-    check("факт == итог импорта (нет задвоения)", fact == t2, f"факт {fact} vs импорт {t2}")
+    rawf = raw.get("total_unique") if isinstance(raw, dict) else None
+    check("факт дашборда == raw-факт (один источник)", fact == rawf, f"факт {fact} vs raw {rawf}")
 
 
 # ── 5. дедуп на mock-данных (без сети/БД) ───────────────────────────────────
