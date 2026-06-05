@@ -1446,25 +1446,18 @@ def get_launch_windows() -> list[dict]:
 
 
 def resolve_channel_by_utm(conn, utm_source, utm_medium, platform):
-    """channel_id по utm_mappings. Приоритет: точное (src,med,platform) ->
-    platform-agnostic (src,med,''). Не найдено / неоднозначно -> None.
-    Значения нормализуются как в sheet_normalize (lowercase + канон платформы)."""
-    from sheet_normalize import _norm_platform
+    """channel_id по utm_mappings, через чистый резолвер utm_resolve.
+    Приоритет: точное (src,med,platform) -> platform-agnostic (src,med,'').
+    Не найдено / неоднозначно -> None."""
+    from utm_resolve import resolve_channel_by_utm as _resolve
     s = (utm_source or "").strip().lower()
     m = (utm_medium or "").strip().lower()
-    p = _norm_platform(platform) or ""
-
-    def _lookup(plat):
-        rows = conn.execute(
-            "SELECT DISTINCT channel_id FROM utm_mappings "
-            "WHERE utm_source=? AND utm_medium=? AND platform=? AND channel_id IS NOT NULL",
-            (s, m, plat)
-        ).fetchall()
-        if len(rows) == 1:
-            return rows[0]["channel_id"]
-        return None  # 0 совпадений или неоднозначность
-
-    return _lookup(p) or (_lookup("") if p else None)
+    rows = conn.execute(
+        "SELECT utm_source, utm_medium, platform, channel_id FROM utm_mappings "
+        "WHERE utm_source=? AND utm_medium=?",
+        (s, m)
+    ).fetchall()
+    return _resolve([dict(r) for r in rows], utm_source, utm_medium, platform)
 
 
 def insert_raw_registration(conn, row_hash, normalized, launch_id, channel_id) -> bool:
