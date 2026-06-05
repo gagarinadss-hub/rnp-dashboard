@@ -282,9 +282,50 @@ def allocate_integer_plan(total: int, shares: list[float]) -> list[int]:
     return base
 
 
+def _date_range(reg_start, reg_end) -> list[str]:
+    """ISO-даты от reg_start до reg_end включительно. [] если окно некорректно."""
+    from datetime import timedelta
+    d0, d1 = _parse_date(reg_start), _parse_date(reg_end)
+    if not d0 or not d1 or (d1 - d0).days < 0:
+        return []
+    return [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
+
+
 def generate_daily_plan(launch: LaunchInput,
                         channel_plans: list[ChannelPlanInput],
                         history_launches: list[HistoryLaunchInput],
                         options: Optional[PlanOptions] = None) -> list[DailyPlanOutput]:
-    """Генерирует дневной план по каналам. Реализация — Задача 2.4."""
-    raise NotImplementedError("generate_daily_plan: реализуется в задаче 2.4")
+    """Генерирует дневной план по каналам.
+
+    1. Список дат от launch.reg_start до launch.reg_end включительно.
+    2. Доли по дням через build_plan_curve().
+    3. План каждого канала раскладывается allocate_integer_plan().
+    4. Возвращает DailyPlanOutput[] (канал × день). В БД не пишет.
+
+    Свойства: для каждого канала sum(planCount) == planTotal; если сумма
+    планов каналов == launch.total_plan, то сумма всех строк == total_plan.
+    """
+    dates = _date_range(launch.reg_start, launch.reg_end)
+    D = len(dates)
+    if D == 0:
+        return []
+
+    shares = build_plan_curve(history_launches, dates, options)
+    has_history = any((h.total_actual or 0) > 0 and _history_window_counts(h)
+                      for h in (history_launches or []))
+    curve_source = "history" if has_history else "fallback"
+
+    rows: list[DailyPlanOutput] = []
+    for cp in (channel_plans or []):
+        counts = allocate_integer_plan(cp.plan_total or 0, shares)
+        for i, d in enumerate(dates):
+            rows.append(DailyPlanOutput(
+                launch_id=launch.id,
+                channel_id=cp.channel_id,
+                date=d,
+                day_index=i + 1,
+                plan_count=counts[i],
+                plan_share=shares[i],
+                curve_source=curve_source,
+            ))
+    return rows

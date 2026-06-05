@@ -149,6 +149,60 @@ for total in [0, 1, 2, 7, 13, 100, 1496, 9999]:
             bad.append((total, shares, rr))
 ok("перебор: сумма==total, длина, без отриц.", not bad, f"провалов: {len(bad)} {bad[:2]}")
 
+# ── 9. generate_daily_plan ──────────────────────────────────────────────────
+print("[9] generate_daily_plan")
+launch = pe.LaunchInput.from_dict({
+    "id": 21, "regStart": "2026-06-02", "regEnd": "2026-06-04",
+    "eventDate": "2026-06-04", "totalPlan": 1496,
+})
+chans = [pe.ChannelPlanInput(channel_id=11, plan_total=1000),
+         pe.ChannelPlanInput(channel_id=12, plan_total=496)]
+rows = pe.generate_daily_plan(launch, chans, hist3)
+
+# даты соответствуют окну регистрации
+got_dates = sorted({r.date for r in rows})
+ok("даты == окну [02,03,04 июня]",
+   got_dates == ["2026-06-02", "2026-06-03", "2026-06-04"], str(got_dates))
+ok("строк == каналы×дни (2×3=6)", len(rows) == 6, str(len(rows)))
+ok("dayIndex с 1 по 3", sorted({r.day_index for r in rows}) == [1, 2, 3])
+
+# сумма по каждому каналу == planTotal
+def chan_sum(cid):
+    return sum(r.plan_count for r in rows if r.channel_id == cid)
+ok("канал 11: сумма == 1000", chan_sum(11) == 1000, str(chan_sum(11)))
+ok("канал 12: сумма == 496", chan_sum(12) == 496, str(chan_sum(12)))
+
+# сумма всех строк == total_plan (т.к. планы каналов в сумме == total_plan)
+ok("сумма всех строк == total_plan 1496",
+   sum(r.plan_count for r in rows) == 1496, str(sum(r.plan_count for r in rows)))
+
+# planShare одинаков для всех каналов в один день
+by_day_share = {}
+share_ok = True
+for r in rows:
+    if r.day_index in by_day_share and not approx(by_day_share[r.day_index], r.plan_share):
+        share_ok = False
+    by_day_share[r.day_index] = r.plan_share
+ok("planShare одинаков по каналам в одном дне", share_ok)
+ok("curve_source == 'history'", all(r.curve_source == "history" for r in rows))
+
+# канал с planTotal 0 -> нули по дням
+rows0 = pe.generate_daily_plan(launch, [pe.ChannelPlanInput(channel_id=99, plan_total=0)], hist3)
+ok("канал planTotal 0 -> все нули", all(r.plan_count == 0 for r in rows0) and len(rows0) == 3, str([r.plan_count for r in rows0]))
+
+# разные длины запуска (5 дней)
+launch5 = pe.LaunchInput.from_dict({
+    "id": 30, "regStart": "2026-07-01", "regEnd": "2026-07-05",
+    "eventDate": "2026-07-05", "totalPlan": 100,
+})
+rows5 = pe.generate_daily_plan(launch5, [pe.ChannelPlanInput(channel_id=1, plan_total=100)], hist3)
+ok("5-дневное окно: 5 строк", len({r.date for r in rows5}) == 5 and len(rows5) == 5, str(len(rows5)))
+ok("5-дневное окно: сумма == 100", sum(r.plan_count for r in rows5) == 100, str(sum(r.plan_count for r in rows5)))
+
+# пустой/некорректный launch -> []
+empty_launch = pe.LaunchInput(id=1, reg_start=None, reg_end=None, event_date=None, total_plan=0)
+ok("некорректное окно -> []", pe.generate_daily_plan(empty_launch, chans, hist3) == [])
+
 # ── итог ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 46)
 print(f"ИТОГ: {_PASS} PASS, {_FAIL} FAIL")
