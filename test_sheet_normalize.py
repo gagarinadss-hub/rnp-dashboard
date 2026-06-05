@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Тесты sheet_normalize. Запуск: python3 test_sheet_normalize.py"""
 import sys
-from sheet_normalize import normalize_sheet_row, DEFAULT_COLUMNS
+from sheet_normalize import normalize_sheet_row, build_registration_row_hash, DEFAULT_COLUMNS
 
 _PASS = _FAIL = 0
 
@@ -84,6 +84,35 @@ n = normalize_sheet_row({"d": "02.06.2026", "s": "EVB", "p": "MAX"},
                         columns={"registered_at": "d", "utm_source": "s", "platform": "p"})
 ok("dict-row: дата+utm+platform", n["registration_date"] == "2026-06-02" and n["utm_source"] == "evb" and n["platform"] == "max",
    str((n["registration_date"], n["utm_source"], n["platform"])))
+
+# ── row_hash ────────────────────────────────────────────────────────────────
+H = build_registration_row_hash
+
+print("[10] row_hash: одинаковая строка -> одинаковый хеш")
+r1 = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="tgc", med="nb", platform="ТГ"))
+r2 = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="tgc", med="nb", platform="ТГ"))
+ok("идентичные строки -> равный хеш", H(r1) == H(r2), f"{H(r1)[:8]} vs {H(r2)[:8]}")
+
+print("[11] row_hash: пробелы/регистр не влияют (после нормализации)")
+a = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="  TGC ", med="NB", platform="тг"))
+b = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="tgc", med="nb", platform="ТГ"))
+ok("пробелы/регистр UTM не меняют хеш", H(a) == H(b), f"{H(a)[:8]} vs {H(b)[:8]}")
+
+print("[12] row_hash: разные строки -> разные хеши")
+base = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="tgc", med="nb", platform="ТГ"))
+diff_user = normalize_sheet_row(make_row(ext="101", dt="02.06.2026 9:08", src="tgc", med="nb", platform="ТГ"))
+diff_time = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:09", src="tgc", med="nb", platform="ТГ"))
+diff_plat = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="tgc", med="nb", platform="лендинг"))
+diff_src  = normalize_sheet_row(make_row(ext="100", dt="02.06.2026 9:08", src="tgb", med="nb", platform="ТГ"))
+ok("другой User ID -> другой хеш", H(base) != H(diff_user))
+ok("другое время -> другой хеш", H(base) != H(diff_time))
+ok("другая платформа -> другой хеш (касания различимы)", H(base) != H(diff_plat))
+ok("другой utm_source -> другой хеш", H(base) != H(diff_src))
+
+print("[13] row_hash: launch_id различает запуски, стабильность пустых полей")
+ok("разный launch_id -> разный хеш", H(base, launch_id=1) != H(base, launch_id=2))
+empty = normalize_sheet_row(make_row())
+ok("пустая строка -> стабильный хеш", H(empty) == H(empty) and len(H(empty)) == 64)
 
 print("\n" + "=" * 44)
 print(f"ИТОГ: {_PASS} PASS, {_FAIL} FAIL")

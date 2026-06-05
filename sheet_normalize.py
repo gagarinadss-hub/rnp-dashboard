@@ -11,6 +11,7 @@ normalize_sheet_row(row, columns) -> {
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from typing import Optional
 
@@ -115,3 +116,31 @@ def normalize_sheet_row(row, columns: Optional[dict] = None) -> dict:
         "external_row_id":   ext,
         "raw_payload":       list(row) if isinstance(row, (list, tuple)) else row,
     }
+
+
+def build_registration_row_hash(normalized_row: dict, launch_id=None) -> str:
+    """Стабильный хеш регистрации для идемпотентного импорта.
+
+    Хешируем уже НОРМАЛИЗОВАННЫЕ стабильные поля, поэтому пробелы/регистр
+    исходной строки на хеш не влияют. Не включаем меняющиеся поля
+    (imported_at и т.п.).
+
+    Примечание: в текущем листе external_row_id = User ID — это идентификатор
+    ЧЕЛОВЕКА, а не строки (у человека несколько касаний-строк). Поэтому берём
+    КОМПОЗИТ (launch + User ID + время + utm + платформа + trigger): это и
+    делает ре-импорт идемпотентным (та же строка -> тот же хеш), и сохраняет
+    разные касания как разные строки. Дедуп до уникального человека —
+    отдельный слой на этапе агрегации (User ID + телефон).
+    """
+    parts = [
+        "rnp1",
+        "" if launch_id is None else str(launch_id),
+        normalized_row.get("external_row_id") or "",
+        normalized_row.get("registered_at") or "",
+        normalized_row.get("utm_source") or "",
+        normalized_row.get("utm_medium") or "",
+        normalized_row.get("platform") or "",
+        normalized_row.get("trigger") or "",
+    ]
+    key = "|".join(parts)
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
