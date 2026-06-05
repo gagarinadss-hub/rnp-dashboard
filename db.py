@@ -70,18 +70,122 @@ def init_db():
                 updated_at TEXT
             )
         """)
+        # ── Аддитивные миграции колонок (ALTER ADD COLUMN идемпотентно) ──────
+        # SQLite не разрешает не-константный DEFAULT в ALTER, поэтому
+        # created_at/updated_at добавляем как NULL и при необходимости
+        # заполняем отдельным UPDATE ниже.
         for sql in [
             "ALTER TABLE launches ADD COLUMN event_end_date TEXT",
             "ALTER TABLE launches ADD COLUMN plan_curve_ref INTEGER",
             "ALTER TABLE launches ADD COLUMN plan_curve_manual TEXT",
+            # RNP core (Задача 1.2)
+            "ALTER TABLE launches ADD COLUMN status TEXT DEFAULT 'active'",
+            "ALTER TABLE launches ADD COLUMN updated_at TEXT",
+            "ALTER TABLE channels ADD COLUMN responsible TEXT DEFAULT ''",
+            "ALTER TABLE channels ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE channels ADD COLUMN created_at TEXT",
+            "ALTER TABLE channels ADD COLUMN updated_at TEXT",
+            "ALTER TABLE launch_channels ADD COLUMN plan_total INTEGER DEFAULT 0",
+            "ALTER TABLE launch_channels ADD COLUMN created_at TEXT",
+            "ALTER TABLE launch_channels ADD COLUMN updated_at TEXT",
         ]:
             try:
                 conn.execute(sql)
             except Exception:
                 pass  # Column already exists
 
+        # ── Новые таблицы расчётного ядра (Задача 1.2) ───────────────────────
+        conn.executescript("""
+            -- Сохранённые версии дневного плана (план не считается на лету)
+            CREATE TABLE IF NOT EXISTS daily_plans (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                launch_id         INTEGER NOT NULL REFERENCES launches(id),
+                channel_id        INTEGER REFERENCES channels(id),
+                date              TEXT NOT NULL,
+                day_index         INTEGER NOT NULL,
+                plan_count        INTEGER NOT NULL DEFAULT 0,
+                plan_share        REAL    NOT NULL DEFAULT 0,
+                plan_version      INTEGER NOT NULL DEFAULT 1,
+                is_active_version INTEGER NOT NULL DEFAULT 1,
+                curve_source      TEXT    DEFAULT '',
+                method_snapshot   TEXT,
+                created_at        TEXT    DEFAULT (datetime('now'))
+            );
+
+            -- Построчный факт регистраций с идемпотентным row_hash
+            CREATE TABLE IF NOT EXISTS raw_registrations (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                row_hash          TEXT UNIQUE NOT NULL,
+                external_row_id   TEXT,
+                registered_at     TEXT,
+                registration_date TEXT,
+                launch_id         INTEGER REFERENCES launches(id),
+                utm_source        TEXT,
+                utm_medium        TEXT,
+                platform          TEXT,
+                channel_id        INTEGER REFERENCES channels(id),
+                raw_payload       TEXT,
+                imported_at       TEXT DEFAULT (datetime('now'))
+            );
+
+            -- UTM-маппинг по channel_id (целевой, рядом со старым label_mappings)
+            CREATE TABLE IF NOT EXISTS utm_mappings (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                utm_source  TEXT DEFAULT '',
+                utm_medium  TEXT DEFAULT '',
+                platform    TEXT DEFAULT '',
+                channel_id  INTEGER REFERENCES channels(id),
+                created_at  TEXT DEFAULT (datetime('now')),
+                updated_at  TEXT,
+                UNIQUE(utm_source, utm_medium, platform)
+            );
+
+            -- Журнал импортов
+            CREATE TABLE IF NOT EXISTS import_runs (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at        TEXT,
+                finished_at       TEXT,
+                status            TEXT,
+                source            TEXT,
+                rows_read         INTEGER DEFAULT 0,
+                rows_imported     INTEGER DEFAULT 0,
+                rows_skipped      INTEGER DEFAULT 0,
+                rows_failed       INTEGER DEFAULT 0,
+                unknown_utm_count INTEGER DEFAULT 0,
+                error_message     TEXT
+            );
+
+            -- Индексы целевой модели
+            CREATE INDEX IF NOT EXISTS idx_daily_plans_launch_version
+                ON daily_plans(launch_id, plan_version);
+            CREATE INDEX IF NOT EXISTS idx_daily_plans_launch_channel_date
+                ON daily_plans(launch_id, channel_id, date);
+            CREATE INDEX IF NOT EXISTS idx_raw_reg_launch_channel_date
+                ON raw_registrations(launch_id, channel_id, registration_date);
+            CREATE INDEX IF NOT EXISTS idx_raw_reg_utm
+                ON raw_registrations(utm_source, utm_medium, platform);
+        """)
+
+        # Зеркалим plan -> plan_total (пока plan остаётся источником правды).
+        try:
+            conn.execute("UPDATE launch_channels SET plan_total = plan WHERE plan_total IS NULL OR plan_total = 0")
+        except Exception:
+            pass
+
         # utm_label_stats — always recreated on import, so we can migrate freely
         _migrate_utm_tables(conn)
+
+        # Бэкфилл utm_mappings из старого label_mappings (по имени канала -> id).
+        # Аддитивно, INSERT OR IGNORE — существующие записи не трогаются.
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO utm_mappings(utm_source, utm_medium, platform, channel_id, created_at)
+                SELECT lm.utm_source, lm.utm_medium, lm.platform, c.id, datetime('now')
+                FROM label_mappings lm
+                JOIN channels c ON c.name = lm.channel_name
+            """)
+        except Exception:
+            pass
 
 
 def _migrate_utm_tables(conn):
