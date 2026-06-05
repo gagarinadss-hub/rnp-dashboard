@@ -212,6 +212,27 @@ def importer_status():
     return get_status()
 
 
+# ── Raw import (Этап 3) — построчно в raw_registrations ──────────────────────
+@app.post("/api/import/google-sheets")
+def import_google_sheets(body: dict | None = None):
+    """Построчный идемпотентный импорт регистраций в raw_registrations.
+    Параллелен старому агрегатному пути; дашборд переключится в 5.1."""
+    from raw_import import import_registrations_from_sheets
+    from db import get_active_launch_id
+    body = body or {}
+    launch_id = body.get("launch_id") or get_active_launch_id()
+    try:
+        return import_registrations_from_sheets(launch_id=launch_id, source=body.get("source", "manual"))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/import-runs")
+def import_runs(limit: int = 20):
+    from db import get_import_runs
+    return get_import_runs(limit)
+
+
 # ── Launches (SQLite) ───────────────────────────────────────────────────────
 @app.get("/api/launches")
 def list_launches():

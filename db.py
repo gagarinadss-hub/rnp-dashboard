@@ -1405,6 +1405,85 @@ def get_history_launches(exclude_launch_id=None, limit: int = 10,
         return result
 
 
+# ── Raw registrations / import runs (Этап 3) ────────────────────────────────
+def create_import_run(source: str = "manual") -> int:
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO import_runs(started_at, status, source) VALUES(datetime('now'),'running',?)",
+            (source,)
+        )
+        return conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+
+
+def finish_import_run(run_id: int, status: str, rows_read=0, rows_imported=0,
+                      rows_skipped=0, rows_failed=0, unknown_utm_count=0, error_message=None):
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE import_runs SET finished_at=datetime('now'), status=?,
+               rows_read=?, rows_imported=?, rows_skipped=?, rows_failed=?,
+               unknown_utm_count=?, error_message=? WHERE id=?""",
+            (status, rows_read, rows_imported, rows_skipped, rows_failed,
+             unknown_utm_count, error_message, run_id)
+        )
+
+
+def get_import_runs(limit: int = 20) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM import_runs ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_launch_windows() -> list[dict]:
+    """Окна запусков для привязки регистраций по дате: [{id, reg_start, reg_end, is_active}]."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, reg_start, reg_end, is_active FROM launches "
+            "WHERE reg_start IS NOT NULL AND reg_end IS NOT NULL"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def resolve_channel_by_utm(conn, utm_source, utm_medium, platform):
+    """channel_id по utm_mappings. Приоритет: точное (src,med,platform) ->
+    platform-agnostic (src,med,''). Не найдено / неоднозначно -> None.
+    Значения нормализуются как в sheet_normalize (lowercase + канон платформы)."""
+    from sheet_normalize import _norm_platform
+    s = (utm_source or "").strip().lower()
+    m = (utm_medium or "").strip().lower()
+    p = _norm_platform(platform) or ""
+
+    def _lookup(plat):
+        rows = conn.execute(
+            "SELECT DISTINCT channel_id FROM utm_mappings "
+            "WHERE utm_source=? AND utm_medium=? AND platform=? AND channel_id IS NOT NULL",
+            (s, m, plat)
+        ).fetchall()
+        if len(rows) == 1:
+            return rows[0]["channel_id"]
+        return None  # 0 совпадений или неоднозначность
+
+    return _lookup(p) or (_lookup("") if p else None)
+
+
+def insert_raw_registration(conn, row_hash, normalized, launch_id, channel_id) -> bool:
+    """Идемпотентная вставка строки факта. True — вставлено, False — дубль (row_hash уже есть)."""
+    import json
+    before = conn.total_changes
+    conn.execute(
+        """INSERT OR IGNORE INTO raw_registrations
+           (row_hash, external_row_id, registered_at, registration_date, launch_id,
+            utm_source, utm_medium, platform, channel_id, raw_payload, imported_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+        (row_hash, normalized.get("external_row_id"), normalized.get("registered_at"),
+         normalized.get("registration_date"), launch_id, normalized.get("utm_source"),
+         normalized.get("utm_medium"), normalized.get("platform"), channel_id,
+         json.dumps(normalized.get("raw_payload"), ensure_ascii=False))
+    )
+    return conn.total_changes > before
+
+
 def get_launch_detail(launch_id: int) -> dict:
     with get_db() as conn:
         l = conn.execute(
