@@ -125,6 +125,7 @@ def init_db():
                 utm_medium        TEXT,
                 platform          TEXT,
                 channel_id        INTEGER REFERENCES channels(id),
+                phone             TEXT,
                 raw_payload       TEXT,
                 imported_at       TEXT DEFAULT (datetime('now'))
             );

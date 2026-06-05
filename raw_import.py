@@ -91,33 +91,36 @@ def _match_launch(windows, reg_date, prefer=None):
 
 
 def import_registrations_from_sheets(launch_id=None, source: str = "manual",
-                                     sheet_id: str = None, sheet_name: str = None) -> dict:
-    """Импортировать регистрации из Google Sheets в raw_registrations.
+                                     sheet_id: str = None, sheet_name: str = None,
+                                     rows=None) -> dict:
+    """Импортировать регистрации в raw_registrations.
+    Если передан ``rows`` (список строк-списков) — импортируем их (mock/тест,
+    без сети). Иначе читаем Google Sheets.
     Возвращает сводку: import_run_id, rows_read/imported/skipped/failed, unknown_utm_count."""
-    import gspread
-    from sheets_importer import SHEET_ID_REGS, MAIN_SHEET_NAME
-
-    sheet_id = sheet_id or SHEET_ID_REGS
-    sheet_name = sheet_name or MAIN_SHEET_NAME
-
     run_id = db.create_import_run(source=source)
     rows_read = rows_imported = rows_skipped = rows_failed = 0
     unknown = set()
 
     try:
-        gc = gspread.service_account(filename=str(BASE_DIR / "credentials.json"))
-        # контекст старого резолвера (fallback по каналам) — строим один раз
-        from sheets_importer import _build_mapping, _load_db_mappings
-        try:
-            mapping = _build_mapping(gc)
-        except Exception as e:
-            log.warning(f"[raw_import] Справочник недоступен: {e}")
-            mapping = {}
+        from sheets_importer import _load_db_mappings
+        if rows is None:
+            import gspread
+            from sheets_importer import SHEET_ID_REGS, MAIN_SHEET_NAME, _build_mapping
+            sheet_id = sheet_id or SHEET_ID_REGS
+            sheet_name = sheet_name or MAIN_SHEET_NAME
+            gc = gspread.service_account(filename=str(BASE_DIR / "credentials.json"))
+            try:
+                mapping = _build_mapping(gc)
+            except Exception as e:
+                log.warning(f"[raw_import] Справочник недоступен: {e}")
+                mapping = {}
+            ws = gc.open_by_key(sheet_id).worksheet(sheet_name)
+            all_rows = ws.get_all_values()
+            data_rows = all_rows[1:] if all_rows else []
+        else:
+            mapping = {}            # mock-режим: без Справочника
+            data_rows = rows
         db_map = _load_db_mappings()
-
-        ws = gc.open_by_key(sheet_id).worksheet(sheet_name)
-        all_rows = ws.get_all_values()
-        data_rows = all_rows[1:] if all_rows else []
         windows = db.get_launch_windows()
 
         with db.get_db() as conn:
