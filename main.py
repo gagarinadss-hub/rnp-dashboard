@@ -91,23 +91,13 @@ async def _import_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global DEMO_MODE, _import_task
+    global _import_task
     from db import init_db
     init_db()
     print("[startup] SQLite DB инициализирована")
-    try:
-        get_data()
-        print("[startup] ✅ Подключился к Google Sheets (live)")
-    except Exception as e:
-        if CACHE_FILE.exists():
-            print(f"[startup] ⚠ Google Sheets недоступен. Читаю data_cache.json")
-            global _cache, _last_updated
-            _cache = _load_cache_file()
-            _last_updated = time.time()
-        else:
-            print(f"[startup] ⚠ Google Sheets недоступен ({e}). Включаю ДЕМО-режим.")
-            DEMO_MODE = True
-            get_data()
+    # Дашборд читает только БД (daily_plans + daily_registrations).
+    # Старый live-путь Google Sheets отключён от дашборда; единственная
+    # интеграция со Sheets — фоновый импорт факта ниже.
 
     # Запускаем фоновый импорт
     _import_task = asyncio.create_task(_import_loop())
@@ -135,18 +125,50 @@ app.add_middleware(
 
 
 # ── Live dashboard (Google Sheets) ──────────────────────────────────────────
+def _empty_dashboard() -> dict:
+    """Чистый empty-state, когда нет активного запуска. Не 500, форма как у
+    реального payload, чтобы фронт не падал."""
+    from datetime import datetime
+    return {
+        "overview": {
+            "launch_id": None, "launch_name": "Нет активного запуска",
+            "start_date": None, "end_date": None, "event_date": None,
+            "total_plan": 0, "total_actual": 0, "completion_pct": 0,
+            "days_elapsed": 0, "days_total": 0, "days_remaining": 0,
+            "not_started": True, "pace_needed": 0,
+            "last_updated": datetime.now().isoformat(), "_source": "empty",
+        },
+        "daily": {"dates": [], "daily_actual": [], "daily_plan": [],
+                  "cumulative_actual": [], "cumulative_plan": []},
+        "channels": [], "forecast": {}, "alerts": [],
+        "best_channels": [], "lag_channels": [],
+    }
+
+
+def _active_dashboard() -> dict:
+    """Единый источник правды дашборда: активный запуск из БД.
+    Google Sheets здесь не участвует — факт берётся из daily_registrations."""
+    from db import get_active_launch_id, get_dashboard_from_db
+    launch_id = get_active_launch_id()
+    if not launch_id:
+        return _empty_dashboard()
+    data = get_dashboard_from_db(launch_id)
+    return data or _empty_dashboard()
+
+
 @app.get("/api/dashboard")
 def dashboard():
     try:
-        return get_data()
+        return _active_dashboard()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/refresh")
 def refresh():
+    # «Обновить» больше не переключает на старый live-режим: тот же DB-дашборд.
     try:
-        return get_data(force=True)
+        return _active_dashboard()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -263,11 +285,11 @@ def _live_override_for(launch_id: int) -> dict | None:
 
 @app.get("/api/launches/{launch_id}/dashboard")
 def launch_dashboard(launch_id: int):
-    """DB-based dashboard. Для активного запуска факт каналов берётся из
-    живого Справочника (доверенные числа), план/комментарии/задачи — из БД."""
+    """DB-based dashboard. Единый источник правды: план и факт берутся из БД
+    (daily_plans + daily_registrations). Старый live-override отключён —
+    Google Sheets используется только импорт-сервисом для факта."""
     from db import get_dashboard_from_db
-    override = _live_override_for(launch_id)
-    data = get_dashboard_from_db(launch_id, live_override=override)
+    data = get_dashboard_from_db(launch_id)
     if not data:
         raise HTTPException(404, "Launch not found")
     return data
