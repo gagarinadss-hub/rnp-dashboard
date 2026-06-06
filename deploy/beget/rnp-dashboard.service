@@ -1,0 +1,13 @@
+[Unit]
+Description=RNP Dashboard (FastAPI)
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/rnp-dashboard
+EnvironmentFile=/opt/rnp-data/.env
+ExecStart=/opt/rnp-dashboard/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

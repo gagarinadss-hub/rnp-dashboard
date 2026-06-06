@@ -179,6 +179,16 @@ def health():
     return {"status": "ok", "cached": bool(_cache), "importer": get_status()}
 
 
+@app.get("/api/admin/export-db")
+def export_db(token: str = ""):
+    """Скачать файл launches.db (для переезда). Защита токеном WEBHOOK_TOKEN."""
+    from fastapi.responses import FileResponse
+    from db import DB_PATH
+    if token != os.getenv("WEBHOOK_TOKEN", "rnp-bot-2026"):
+        raise HTTPException(403, "forbidden")
+    return FileResponse(str(DB_PATH), media_type="application/octet-stream", filename="launches.db")
+
+
 # ── Import endpoints ─────────────────────────────────────────────────────────
 # Ручной и авто-импорт идут через ОДИН сервис (import_service.run_import_service)
 # с защитой от параллельных запусков. Возвращаем агрегатный результат для
