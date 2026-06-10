@@ -1,6 +1,14 @@
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+# Москва (UTC+3): «сегодня» и день запуска считаем по московской дате,
+# чтобы день перещёлкивался в московскую полночь, а не в UTC.
+MSK_TZ = timezone(timedelta(hours=3))
+
+
+def _msk_today() -> date:
+    return datetime.now(MSK_TZ).date()
 from pathlib import Path
 
 # DATA_DIR: на Railway монтируем volume в /data, локально — рядом с кодом
@@ -775,7 +783,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         if not l:
             return None
 
-        today = date.today()
+        today = _msk_today()
         reg_start = date.fromisoformat(l["reg_start"]) if l["reg_start"] else today - timedelta(days=6)
         reg_end   = date.fromisoformat(l["reg_end"])   if l["reg_end"]   else today
 
