@@ -18,8 +18,8 @@ BASE_DIR = Path(__file__).parent
 SHEET_ID_REGS    = '10674VDmFpo1s_NU02H0ScJ1BqYyWBwlAGh4OMBOZMHA'  # новая таблица с рег.
 SHEET_ID_REF_BOOK = '1bDbcketkM9SC5FY0rMHvwy8bUaf4Op3hPxFQJHBKH9E'  # Справочник
 
-MAIN_SHEET_NAME = 'вайбкодинг 4.06.26'
-REF_SHEET_NAME  = 'вайбкодинг 4.06.26 (реф)'  # листа рефералок пока нет — импортёр мягко пропустит
+MAIN_SHEET_NAME = 'ЗАПУСК 16-17 ИЮНЯ'
+REF_SHEET_NAME  = 'ЗАПУСК 16-17 ИЮНЯ (реф)'  # реф появится позже, лист уже есть
 
 # ── Hardcoded extras (подтверждены пользователем) ─────────────────────────
 _EXTRA = {
