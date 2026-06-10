@@ -123,6 +123,7 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
         db_map = _load_db_mappings()
         windows = db.get_launch_windows()
 
+        seen_hashes_target = set()   # хеши строк целевого запуска в этом импорте
         with db.get_db() as conn:
             for r in data_rows:
                 if not any((c or "").strip() for c in r):
@@ -133,6 +134,8 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
                     trigger = r[7].strip() if len(r) > 7 else ""
                     lid = _match_launch(windows, n["registration_date"], prefer=launch_id)
                     rhash = build_registration_row_hash(n, launch_id=lid)
+                    if lid == launch_id:
+                        seen_hashes_target.add(rhash)
                     chan = _resolve_channel(conn, n, trigger, mapping, db_map)
                     if chan is None and (n["utm_source"] or n["utm_medium"] or n["platform"]):
                         unknown.add((n["utm_source"], n["utm_medium"], n["platform"]))
@@ -144,9 +147,24 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
                     rows_failed += 1
                     log.warning(f"[raw_import] строка пропущена: {row_err}")
 
+            # Реконсиляция: лист — источник правды. Удаляем строки целевого
+            # запуска, которых уже НЕТ в листе (их удалили/изменили), чтобы raw
+            # не «накапливал» устаревшее. Один запуск = один лист, поэтому
+            # сверяем по полному набору хешей текущего листа.
+            if launch_id is not None and seen_hashes_target:
+                existing = conn.execute(
+                    "SELECT row_hash FROM raw_registrations WHERE launch_id=?", (launch_id,)
+                ).fetchall()
+                stale = [e["row_hash"] for e in existing if e["row_hash"] not in seen_hashes_target]
+                for h in stale:
+                    conn.execute("DELETE FROM raw_registrations WHERE row_hash=?", (h,))
+                rows_removed = len(stale)
+            else:
+                rows_removed = 0
+
         db.finish_import_run(run_id, "success", rows_read, rows_imported,
                              rows_skipped, rows_failed, len(unknown))
-        result = {"status": "success"}
+        result = {"status": "success", "rows_removed": rows_removed}
     except Exception as e:
         log.exception("[raw_import] импорт упал")
         db.finish_import_run(run_id, "failed", rows_read, rows_imported,
