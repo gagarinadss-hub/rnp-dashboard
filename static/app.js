@@ -25,7 +25,13 @@ function fmtDate(s) {
 }
 function fmtTime(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  // Если в строке нет часового пояса — считаем её UTC (сервер в UTC),
+  // и всегда показываем московское время.
+  let s = iso;
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(s)) s += 'Z';
+  return new Date(s).toLocaleTimeString('ru-RU', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow',
+  });
 }
 function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
 function pctClass(p) {
