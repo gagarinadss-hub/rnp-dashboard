@@ -760,6 +760,24 @@ def compute_alerts(overview: dict, channels: list, forecast: dict) -> list[dict]
     return alerts
 
 
+def _project_forecast(series_actual, total, fractions, days_elapsed) -> int:
+    """Прогноз итога серии по «хорошим» (фактически завершённым) дням.
+    Текущий неполный день (факт << ожидания) отбрасывается, чтобы не занижать
+    прогноз. Та же логика, что у общего прогноза дашборда."""
+    n = min(days_elapsed, len(fractions), len(series_actual))
+    if n <= 0 or total <= 0:
+        return int(sum(series_actual[:max(0, days_elapsed)]))
+    good = [i for i in range(n)
+            if total * fractions[i] > 0 and series_actual[i] >= total * fractions[i] * 0.15]
+    if good:
+        ca = sum(series_actual[i] for i in good)
+        cf = sum(fractions[i] for i in good)
+        return int(round(ca / cf)) if cf > 0 else int(sum(series_actual[:n]))
+    cf = sum(fractions[:n])
+    s = sum(series_actual[:n])
+    return int(round(s / cf)) if cf > 0 else int(s)
+
+
 def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> dict:
     """Compute a full dashboard payload from SQLite data.
 
@@ -903,8 +921,9 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             # Прогноз канала: проекция факта канала через долю ПЛАНА к дате
             # (план канала распределён по исторической кривой). Сравнение
             # «сколько набрал vs сколько должно быть к сегодня по плану».
-            _ch_fc = _pe.calculate_forecast(daily_plan, daily_actual, days_elapsed)
-            ch_forecast = _ch_fc["forecastTotal"] if _ch_fc["forecastTotal"] is not None else total_actual_ch
+            _fracs = plan_fractions if plan_fractions else _forecast_fractions(total_days)
+            ch_forecast = _project_forecast(daily_actual, ch_plan, _fracs, days_elapsed) \
+                if days_elapsed > 0 else total_actual_ch
 
             channels.append({
                 "channel_id":    ch["ch_id"],
@@ -1082,8 +1101,8 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             "planToDate":       _fc["planToDate"],
             "actualToDate":     _fc["actualToDate"],
             "pacePct":          _fc["pacePct"],
-            "forecastTotal":    _fc["forecastTotal"],
-            "forecastPct":      _fc["forecastPct"],
+            "forecastTotal":    projected_total,
+            "forecastPct":      projected_pct,
             "completionPct":    _fc["completionPct"],
             "last_updated":     datetime.now().isoformat(),
             "_source":          "db",
