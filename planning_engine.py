@@ -215,15 +215,30 @@ def build_plan_curve(history_launches: list[HistoryLaunchInput],
     if D <= 0:
         return []
 
-    curves: list[list[float]] = []
+    def _launch_len(h):
+        rs, re = _parse_date(h.reg_start), _parse_date(h.reg_end)
+        if rs and re and (re - rs).days >= 0:
+            return (re - rs).days + 1
+        return len(h.daily_actual or [])
+
+    # Кандидаты с полезными данными
+    usable = []
     for h in history_launches:
         if (h.total_actual or 0) <= 0:      # игнорируем нулевой факт
             continue
         counts = _history_window_counts(h)
         if counts:
-            curves.append(_cumulative_shares(counts))
+            usable.append((h, counts))
 
-    if not curves:                          # fallback
+    # Предпочитаем запуски НЕ КОРОЧЕ целевого окна: короткие (напр. 3-дневные)
+    # при растягивании на длинный запуск перекашивают долю первых дней.
+    # Если подходящих нет — берём все (fallback).
+    long_enough = [(h, c) for (h, c) in usable if _launch_len(h) >= D]
+    pool = long_enough if long_enough else usable
+
+    curves: list[list[float]] = [_cumulative_shares(c) for (_, c) in pool]
+
+    if not curves:                          # совсем нет истории
         curves = [_cumulative_shares(FALLBACK_DAY_SHARES)]
 
     # усреднённая накопительная доля в позициях конца каждого target-дня
