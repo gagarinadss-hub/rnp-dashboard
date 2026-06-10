@@ -796,13 +796,10 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         day_dates = [str(reg_start + timedelta(days=i)) for i in range(total_days)]
 
         # ── История последних 5 запусков для ПРОГНОЗА (общий + по каналам) ──
-        # Прогноз строится относительно подневного факта прошлых запусков:
-        # общий — по агрегатной кривой, каждый канал — по своей.
+        # Прогноз считается ОТНОСИТЕЛЬНО ПЛАНА (а план построен из истории
+        # последних 5 запусков). «Чистая» историческая кривая по сырым данным
+        # ненадёжна (грязные reg-окна), поэтому опираемся на кривую плана.
         import planning_engine as _pe
-        _hist = [_pe.HistoryLaunchInput.from_dict(h)
-                 for h in get_history_launches(exclude_launch_id=launch_id, limit=5)]
-        _agg_curve = _pe.build_plan_curve(_hist, day_dates)
-        _ch_curve_cache: dict = {}
 
         # Channels
         ch_rows = conn.execute(
@@ -895,14 +892,11 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             target_pace = ch_plan / total_days if total_days > 0 and ch_plan > 0 else 0
             pace_ratio  = round(actual_pace / target_pace, 2) if target_pace > 0 else 0
 
-            # Per-channel forecast: проекция факта канала по ЕГО исторической
-            # кривой (подневный факт этого канала в последних 5 запусках).
-            _cc = _ch_curve_cache.get(ch["ch_id"])
-            if _cc is None:
-                _cc = _pe.build_channel_curve(_hist, ch["ch_id"], day_dates)
-                _ch_curve_cache[ch["ch_id"]] = _cc
-            _ch_ft = _pe.forecast_from_curve(_cc, daily_actual, days_elapsed)
-            ch_forecast = _ch_ft if _ch_ft is not None else total_actual_ch
+            # Прогноз канала: проекция факта канала через долю ПЛАНА к дате
+            # (план канала распределён по исторической кривой). Сравнение
+            # «сколько набрал vs сколько должно быть к сегодня по плану».
+            _ch_fc = _pe.calculate_forecast(daily_plan, daily_actual, days_elapsed)
+            ch_forecast = _ch_fc["forecastTotal"] if _ch_fc["forecastTotal"] is not None else total_actual_ch
 
             channels.append({
                 "channel_id":    ch["ch_id"],
@@ -984,7 +978,7 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         # Кривая — ИЗ ИСТОРИИ последних 5 запусков (агрегатная), а не фиксированная.
         # Проекция = накопл.факт / накопл.доля к текущему дню. «Вялые» дни
         # (<15% ожидания) отбрасываем, чтобы мягкий старт не занижал прогноз.
-        fcurve = _agg_curve if _agg_curve else _forecast_fractions(total_days)
+        fcurve = plan_fractions if plan_fractions else _forecast_fractions(total_days)
 
         good_idxs = []
         for i in range(days_elapsed):
@@ -1080,8 +1074,8 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             "planToDate":       _fc["planToDate"],
             "actualToDate":     _fc["actualToDate"],
             "pacePct":          _fc["pacePct"],
-            "forecastTotal":    projected_total,
-            "forecastPct":      projected_pct,
+            "forecastTotal":    _fc["forecastTotal"],
+            "forecastPct":      _fc["forecastPct"],
             "completionPct":    _fc["completionPct"],
             "last_updated":     datetime.now().isoformat(),
             "_source":          "db",
