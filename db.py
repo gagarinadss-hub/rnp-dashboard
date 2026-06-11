@@ -761,21 +761,22 @@ def compute_alerts(overview: dict, channels: list, forecast: dict) -> list[dict]
 
 
 def _project_forecast(series_actual, total, fractions, days_elapsed) -> int:
-    """Прогноз итога серии по «хорошим» (фактически завершённым) дням.
-    Текущий неполный день (факт << ожидания) отбрасывается, чтобы не занижать
-    прогноз. Та же логика, что у общего прогноза дашборда."""
-    n = min(days_elapsed, len(fractions), len(series_actual))
-    if n <= 0 or total <= 0:
-        return int(sum(series_actual[:max(0, days_elapsed)]))
+    """Прогноз итога серии по ЗАВЕРШЁННЫМ дням. Текущий день ещё идёт и в
+    проекцию не входит (иначе занижает). На день 1 (завершённых нет) —
+    проекция по частичному дню 1. Прогноз не ниже уже накопленного факта."""
+    so_far = int(sum(series_actual[:max(0, days_elapsed)]))
+    completed = max(0, days_elapsed - 1)
+    rng = completed if completed > 0 else days_elapsed   # день 1 — по частичному
+    n = min(rng, len(fractions), len(series_actual))
+    if total <= 0 or n <= 0:
+        return so_far
     good = [i for i in range(n)
             if total * fractions[i] > 0 and series_actual[i] >= total * fractions[i] * 0.15]
-    if good:
-        ca = sum(series_actual[i] for i in good)
-        cf = sum(fractions[i] for i in good)
-        return int(round(ca / cf)) if cf > 0 else int(sum(series_actual[:n]))
-    cf = sum(fractions[:n])
-    s = sum(series_actual[:n])
-    return int(round(s / cf)) if cf > 0 else int(s)
+    idxs = good if good else list(range(n))
+    ca = sum(series_actual[i] for i in idxs)
+    cf = sum(fractions[i] for i in idxs)
+    proj = int(round(ca / cf)) if cf > 0 else so_far
+    return max(proj, so_far)
 
 
 def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> dict:
@@ -1007,8 +1008,12 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         # (<15% ожидания) отбрасываем, чтобы мягкий старт не занижал прогноз.
         fcurve = plan_fractions if plan_fractions else _forecast_fractions(total_days)
 
+        # Проекция строится по ЗАВЕРШЁННЫМ дням (текущий день ещё идёт —
+        # не занижаем им). На день 1 (завершённых нет) — по частичному дню 1.
+        _completed = max(0, days_elapsed - 1)
+        _proj_range = _completed if _completed > 0 else days_elapsed
         good_idxs = []
-        for i in range(days_elapsed):
+        for i in range(_proj_range):
             expected = total_plan * fcurve[i] if i < len(fcurve) else 0
             if expected > 0 and daily_total_actual[i] >= expected * 0.15:
                 good_idxs.append(i)
@@ -1018,8 +1023,9 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             cum_frac   = sum(fcurve[i] for i in good_idxs)
             projected  = int(cum_actual / cum_frac) if cum_frac > 0 else total_actual
         else:
-            cum_frac  = sum(fcurve[:days_elapsed])
-            projected = int(total_actual / cum_frac) if cum_frac > 0 else total_actual
+            cum_frac  = sum(fcurve[:_proj_range])
+            projected = int(sum(daily_total_actual[:_proj_range]) / cum_frac) if cum_frac > 0 else total_actual
+        projected = max(projected, total_actual)   # не ниже уже накопленного
 
         # Сценарии: реалистичный — накопл.метод. Опт/пес — диапазон неопределённости
         # ТОЛЬКО по оставшимся дням: накопленный факт уже зафиксирован, поэтому
