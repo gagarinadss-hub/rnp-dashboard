@@ -28,6 +28,15 @@ def _resolve_channel(conn, normalized, trigger, mapping, db_map):
     """Канал для строки: сначала utm_mappings (новый путь), затем fallback на
     старый резолвер sheets_importer._resolve (хардкод-правила + Справочник).
     Возвращает channel_id или None (только для настоящих 'без метки')."""
+    # Для строк без utm-меток решает trigger: ref -> Рефка, direct -> без метки.
+    # Это в приоритете над маппингом пустых меток (иначе уходит в «Прочее»).
+    t = (trigger or "").strip().lower()
+    if not (normalized.get("utm_source") or normalized.get("utm_medium")):
+        if t == "ref":
+            return db.upsert_channel(conn, "Рефка")
+        if t == "direct":
+            return db.upsert_channel(conn, "без метки")
+
     cid = db.resolve_channel_by_utm(conn, normalized.get("utm_source"),
                                     normalized.get("utm_medium"), normalized.get("platform"))
     if cid is not None:

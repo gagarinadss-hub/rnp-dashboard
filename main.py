@@ -251,6 +251,16 @@ def import_runs(limit: int = 20):
     return get_import_runs(limit)
 
 
+@app.post("/api/launches/{launch_id}/reresolve")
+def reresolve_launch(launch_id: int):
+    """Переразобрать канал у уже импортированных raw-строк по текущим правилам."""
+    from raw_import import reresolve_raw_channels
+    try:
+        return reresolve_raw_channels(launch_id)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 # ── Unknown UTM (Этап 4) ─────────────────────────────────────────────────────
 @app.post("/api/launches/{launch_id}/reresolve-raw")
 def reresolve_raw(launch_id: int):
