@@ -464,10 +464,11 @@ function channelForDay(c, dayIdx) {
 function sortChannelList(channels, mode) {
   const arr = [...channels];
   const pctOf = c => c.plan > 0 ? c.actual / c.plan : (c.actual > 0 ? 99 : -1);
-  if (mode === 'fact')      arr.sort((a, b) => (b.actual || 0) - (a.actual || 0));
-  else if (mode === 'pct')  arr.sort((a, b) => (b.pct || 0) - (a.pct || 0));
-  else if (mode === 'name') arr.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
-  else                      arr.sort((a, b) => pctOf(a) - pctOf(b)); // behind plan first
+  if (mode === 'fact')       arr.sort((a, b) => (b.actual || 0) - (a.actual || 0));
+  else if (mode === 'pct')   arr.sort((a, b) => (b.pct || 0) - (a.pct || 0));
+  else if (mode === 'name')  arr.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+  else if (mode === 'behind') arr.sort((a, b) => pctOf(a) - pctOf(b)); // отстающие сверху
+  else                       arr.sort((a, b) => pctOf(b) - pctOf(a)); // ahead: опережающие сверху
   return arr;
 }
 
@@ -480,7 +481,7 @@ function renderChannelsList() {
     return;
   }
   const q     = (document.getElementById('chListSearch')?.value || '').trim().toLowerCase();
-  const mode  = document.getElementById('chListSort')?.value || 'behind';
+  const mode  = document.getElementById('chListSort')?.value || 'ahead';
   const resp  = (document.getElementById('chListResp')?.value || '').trim();
   const dayRaw = document.getElementById('chListDay')?.value || '';
   const dayIdx = dayRaw === '' ? null : Number(dayRaw);
