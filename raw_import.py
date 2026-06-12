@@ -112,9 +112,10 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
 
     try:
         from sheets_importer import _load_db_mappings
+        # data_rows — список (строка, is_referral). Реф-строки форсим в «Рефка».
         if rows is None:
             import gspread
-            from sheets_importer import SHEET_ID_REGS, MAIN_SHEET_NAME, _build_mapping
+            from sheets_importer import SHEET_ID_REGS, MAIN_SHEET_NAME, REF_SHEET_NAME, _build_mapping
             sheet_id = sheet_id or SHEET_ID_REGS
             sheet_name = sheet_name or MAIN_SHEET_NAME
             gc = gspread.service_account(filename=str(BASE_DIR / "credentials.json"))
@@ -123,18 +124,24 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
             except Exception as e:
                 log.warning(f"[raw_import] Справочник недоступен: {e}")
                 mapping = {}
-            ws = gc.open_by_key(sheet_id).worksheet(sheet_name)
-            all_rows = ws.get_all_values()
-            data_rows = all_rows[1:] if all_rows else []
+            book = gc.open_by_key(sheet_id)
+            main_rows = book.worksheet(sheet_name).get_all_values()[1:]
+            data_rows = [(r, False) for r in main_rows]
+            try:                       # реф-лист (опционально)
+                ref_rows = book.worksheet(REF_SHEET_NAME).get_all_values()[1:]
+                data_rows += [(r, True) for r in ref_rows]
+            except Exception as e:
+                log.info(f"[raw_import] реф-лист не прочитан: {e}")
         else:
             mapping = {}            # mock-режим: без Справочника
-            data_rows = rows
+            data_rows = [(r, False) for r in rows]
         db_map = _load_db_mappings()
         windows = db.get_launch_windows()
 
         seen_hashes_target = set()   # хеши строк целевого запуска в этом импорте
         with db.get_db() as conn:
-            for r in data_rows:
+            _ref_cid = db.upsert_channel(conn, "Рефка")   # канал рефералки
+            for r, is_ref in data_rows:
                 if not any((c or "").strip() for c in r):
                     continue
                 rows_read += 1
@@ -145,9 +152,12 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
                     rhash = build_registration_row_hash(n, launch_id=lid)
                     if lid == launch_id:
                         seen_hashes_target.add(rhash)
-                    chan = _resolve_channel(conn, n, trigger, mapping, db_map)
-                    if chan is None and (n["utm_source"] or n["utm_medium"] or n["platform"]):
-                        unknown.add((n["utm_source"], n["utm_medium"], n["platform"]))
+                    if is_ref:
+                        chan = _ref_cid          # реферал -> Рефка
+                    else:
+                        chan = _resolve_channel(conn, n, trigger, mapping, db_map)
+                        if chan is None and (n["utm_source"] or n["utm_medium"] or n["platform"]):
+                            unknown.add((n["utm_source"], n["utm_medium"], n["platform"]))
                     if db.insert_raw_registration(conn, rhash, n, lid, chan):
                         rows_imported += 1
                     else:
