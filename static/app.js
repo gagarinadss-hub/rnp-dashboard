@@ -458,7 +458,7 @@ function renderChannelsTable() {
   for (const c of chs) {
     const pct = c.plan > 0 ? Math.round((c.actual || 0) / c.plan * 100) : (c.actual > 0 ? 100 : 0);
     const pcls = c.plan > 0 ? pctClass(pct) : '';
-    body += `<tr><td class="pf-sticky pf-name">${escapeHtml(c.name)}</td>`
+    body += `<tr><td class="pf-sticky pf-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</td>`
       + `<td class="pf-l pf-resp">${escapeHtml(c.responsible || '—')}</td>`
       + `<td>${c.plan > 0 ? fmt(c.plan) : '—'}</td>`
       + `<td class="pf-fact">${fmt(c.actual || 0)}</td>`

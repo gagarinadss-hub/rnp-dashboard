@@ -433,14 +433,17 @@ canvas { max-width: 100%; }
 .pf-hint { font-size: 12px; color: var(--text-sub); }
 .pf-wrap { overflow-x: auto; border-radius: 10px; }
 .pf-table { border-collapse: collapse; font-size: 13px; white-space: nowrap; width: 100%; }
-.pf-table th, .pf-table td { padding: 6px 12px; text-align: right; border-bottom: 1px solid #EEF0F2; }
+.pf-table th, .pf-table td { padding: 5px 9px; text-align: right; border-bottom: 1px solid #EEF0F2; }
 .pf-table th { font-weight: 700; color: var(--text-sub); font-size: 11px; background: #FAFBFC; position: sticky; top: 0; z-index: 2; }
 .pf-table th.pf-l, .pf-table td.pf-l { text-align: left; }
 .pf-table th.pf-sticky, .pf-table td.pf-sticky { position: sticky; left: 0; text-align: left; z-index: 3; background: #fff; }
 .pf-table th.pf-sticky { background: #FAFBFC; z-index: 4; }
 .pf-daygrp { text-align: center; border-left: 1px solid #E8EBEF; }
 .pf-sub { font-size: 10px; text-transform: none; }
-.pf-name { font-weight: 600; color: var(--text); }
+.pf-name {
+  font-weight: 600; color: var(--text); font-size: 12px;
+  max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .pf-resp { color: var(--text-sub); }
 .pf-fact { font-weight: 700; color: var(--text); }
 .pf-pct { font-weight: 700; padding: 2px 8px; border-radius: 6px; }
