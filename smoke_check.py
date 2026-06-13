@@ -105,9 +105,10 @@ def check_payload_invariants(base, active_id, dash):
     check("daily_actual.length == dates.length", len(dact) == len(dates), f"{len(dact)} vs {len(dates)}")
 
     cum_plan = daily.get("cumulative_plan", [])
+    ch_plan_sum = sum((c.get("plan") or 0) for c in chs)
     if dates and cum_plan:
-        check("cumulative_plan[-1] == total_plan", cum_plan[-1] == o.get("total_plan"),
-              f"{cum_plan[-1]} vs {o.get('total_plan')}")
+        check("cumulative_plan[-1] == сумма планов каналов", cum_plan[-1] == ch_plan_sum,
+              f"{cum_plan[-1]} vs {ch_plan_sum}")
 
     check("channels — это список", isinstance(chs, list))
 
