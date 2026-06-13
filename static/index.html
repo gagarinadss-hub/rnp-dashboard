@@ -6,7 +6,7 @@
   <title>РНП Запусков</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=14">
+  <link rel="stylesheet" href="/style.css?v=15">
 </head>
 <body class="app-layout">
 
@@ -350,7 +350,10 @@
           <button class="btn-back" id="backToLaunches">← Назад к списку</button>
           <div class="detail-title-row">
             <h2 id="detail-launch-name">—</h2>
-            <button class="btn-secondary" id="editDetailBtn">✏ Редактировать</button>
+            <div class="detail-title-actions">
+              <button class="btn-secondary" id="editDetailBtn">✏ Редактировать</button>
+              <button class="btn-danger" id="deleteDetailBtn">🗑 Удалить</button>
+            </div>
           </div>
           <div class="kpi-grid" id="detail-kpi-grid" style="margin-bottom:20px"></div>
           <div class="card" style="margin-bottom:20px">
@@ -441,6 +444,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=13"></script>
+  <script src="/app.js?v=14"></script>
 </body>
 </html>

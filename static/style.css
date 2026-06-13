@@ -150,6 +150,15 @@ header {
 }
 .btn-secondary:hover { background: var(--purple-light); }
 
+.detail-title-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-danger {
+  background: #FDECEC; color: #D64545; border: none;
+  padding: 9px 16px; border-radius: var(--radius-sm);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background var(--transition); white-space: nowrap;
+}
+.btn-danger:hover { background: #F9D7D7; }
+
 .btn-back {
   background: none;
   border: none;

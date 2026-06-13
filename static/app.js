@@ -1096,6 +1096,26 @@ document.getElementById('editLaunchBtn')?.addEventListener('click', () => openEd
 document.getElementById('editDetailBtn')?.addEventListener('click', () => {
   if (detailLaunchId) openEditModal(detailLaunchId);
 });
+document.getElementById('deleteDetailBtn')?.addEventListener('click', async () => {
+  if (!detailLaunchId) return;
+  const name = document.getElementById('detail-launch-name')?.textContent || 'этот запуск';
+  if (!confirm(`Удалить запуск «${name}»?\n\nВсе данные запуска (план, факт, метки) будут удалены безвозвратно.`)) return;
+  try {
+    const res = await fetch(`/api/launches/${detailLaunchId}`, { method: 'DELETE' });
+    if (res.status === 400) {
+      alert('Нельзя удалить активный запуск.\nСначала переключись в шапке на другой запуск, потом удаляй этот.');
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // назад к списку + обновить
+    document.getElementById('launchDetailView').classList.add('hidden');
+    document.getElementById('launchesListView').classList.remove('hidden');
+    await loadLaunches();
+    await loadLaunchSelector();
+  } catch (err) {
+    alert('Ошибка удаления: ' + err.message);
+  }
+});
 document.getElementById('closeModal').addEventListener('click', closeModal);
 document.getElementById('cancelModal').addEventListener('click', closeModal);
 document.getElementById('modalOverlay').addEventListener('click', e => {
