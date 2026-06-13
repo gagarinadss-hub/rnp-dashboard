@@ -421,8 +421,56 @@ async function renderChannelsTab() {
 
   chListState = { channels, comments: commentsMap, launchId, canEdit, dates, daysTotal };
   populateChannelFilters();
+  renderChannelsTable();
   renderChannelsList();
   loadUnmatchedLabels();
+}
+
+// Сводная таблица план/факт по каналам (как в гугл-табличке команды)
+function renderChannelsTable() {
+  const table = document.getElementById('channelsTable');
+  if (!table || !dashState) return;
+  const dates = dashState.daily?.dates || [];
+  const chs = (dashState.channels || []).filter(c => (c.plan || 0) > 0 || (c.actual || 0) > 0);
+  chs.sort((a, b) => (b.plan || 0) - (a.plan || 0) || (b.actual || 0) - (a.actual || 0));
+
+  const dlabel = s => { const d = new Date(s + 'T00:00:00'); return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }); };
+
+  // ── заголовок (две строки: дата + план/факт) ──
+  let head = '<thead><tr>'
+    + '<th class="pf-sticky">Канал</th><th class="pf-l">Отв</th><th>План</th><th>Факт</th><th>%</th>';
+  for (const d of dates) head += `<th colspan="2" class="pf-daygrp">${dlabel(d)}</th>`;
+  head += '</tr><tr><th class="pf-sticky"></th><th></th><th></th><th></th><th></th>';
+  for (let i = 0; i < dates.length; i++) head += '<th class="pf-sub pf-daygrp">план</th><th class="pf-sub">факт</th>';
+  head += '</tr></thead>';
+
+  // ── строка ОБЩИЕ ──
+  const tP = chs.reduce((s, c) => s + (c.plan || 0), 0);
+  const tF = chs.reduce((s, c) => s + (c.actual || 0), 0);
+  const tPct = tP > 0 ? Math.round(tF / tP * 100) : 0;
+  const dpT = dates.map((_, i) => chs.reduce((s, c) => s + ((c.daily_plan || [])[i] || 0), 0));
+  const dfT = dates.map((_, i) => chs.reduce((s, c) => s + ((c.daily_actual || [])[i] || 0), 0));
+  let body = `<tr class="pf-total"><td class="pf-sticky">ОБЩИЕ</td><td></td><td>${fmt(tP)}</td><td>${fmt(tF)}</td><td>${tPct}%</td>`;
+  for (let i = 0; i < dates.length; i++) body += `<td class="pf-daygrp">${fmt(dpT[i])}</td><td>${fmt(dfT[i])}</td>`;
+  body += '</tr>';
+
+  // ── строки каналов ──
+  for (const c of chs) {
+    const pct = c.plan > 0 ? Math.round((c.actual || 0) / c.plan * 100) : (c.actual > 0 ? 100 : 0);
+    const pcls = c.plan > 0 ? pctClass(pct) : '';
+    body += `<tr><td class="pf-sticky pf-name">${escapeHtml(c.name)}</td>`
+      + `<td class="pf-l pf-resp">${escapeHtml(c.responsible || '—')}</td>`
+      + `<td>${c.plan > 0 ? fmt(c.plan) : '—'}</td>`
+      + `<td class="pf-fact">${fmt(c.actual || 0)}</td>`
+      + `<td><span class="pf-pct ${pcls}">${c.plan > 0 ? pct + '%' : '—'}</span></td>`;
+    for (let i = 0; i < dates.length; i++) {
+      const pp = (c.daily_plan || [])[i] || 0, fa = (c.daily_actual || [])[i] || 0;
+      const cls = pp > 0 ? (fa >= pp ? 'pf-ok' : (fa > 0 ? 'pf-low' : 'pf-zero')) : '';
+      body += `<td class="pf-dplan pf-daygrp">${pp ? fmt(pp) : ''}</td><td class="pf-dfact ${cls}">${fa ? fmt(fa) : '0'}</td>`;
+    }
+    body += '</tr>';
+  }
+  table.innerHTML = head + '<tbody>' + body + '</tbody>';
 }
 
 // Fill the «Ответственный» and «День» dropdowns from current launch data.
@@ -564,7 +612,6 @@ function channelItemHtml(c, maxFact, dayIdx) {
           ${dayTag}
           ${deltaStr ? `<span class="ch-item-delta ${deltaCls}">${deltaStr} вчера</span>` : ''}
         </div>
-        ${forecastCell(c)}
         <div class="ch-item-pctwrap">
           <div class="ch-item-bar"><div class="ch-item-fill ${fillCls}" style="width:${barW}%"></div></div>
           <span class="ch-pct ${cls}">${pct}%</span>

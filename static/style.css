@@ -427,6 +427,29 @@ canvas { max-width: 100%; }
 .pct-good   { background: #DBEAFE; color: #1E40AF; }
 .pct-warn   { background: #FEF3C7; color: #92400E; }
 .pct-danger { background: #FEE2E2; color: #991B1B; }
+
+/* ── Сводная таблица план/факт по каналам ──────────────────────────────── */
+.pf-card { margin-bottom: 20px; }
+.pf-hint { font-size: 12px; color: var(--text-sub); }
+.pf-wrap { overflow-x: auto; border-radius: 10px; }
+.pf-table { border-collapse: collapse; font-size: 13px; white-space: nowrap; width: 100%; }
+.pf-table th, .pf-table td { padding: 6px 12px; text-align: right; border-bottom: 1px solid #EEF0F2; }
+.pf-table th { font-weight: 700; color: var(--text-sub); font-size: 11px; background: #FAFBFC; position: sticky; top: 0; z-index: 2; }
+.pf-table th.pf-l, .pf-table td.pf-l { text-align: left; }
+.pf-table th.pf-sticky, .pf-table td.pf-sticky { position: sticky; left: 0; text-align: left; z-index: 3; background: #fff; }
+.pf-table th.pf-sticky { background: #FAFBFC; z-index: 4; }
+.pf-daygrp { text-align: center; border-left: 1px solid #E8EBEF; }
+.pf-sub { font-size: 10px; text-transform: none; }
+.pf-name { font-weight: 600; color: var(--text); }
+.pf-resp { color: var(--text-sub); }
+.pf-fact { font-weight: 700; color: var(--text); }
+.pf-pct { font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+.pf-total td { font-weight: 800; background: #F2F8E2; border-bottom: 2px solid #D9E0E8; }
+.pf-total td.pf-sticky { background: #F2F8E2; }
+.pf-dplan { color: #9CA3AF; }
+.pf-dfact.pf-ok  { background: #E6F6E0; color: #2E7D32; }
+.pf-dfact.pf-low { background: #FDECEC; color: #C0392B; }
+.pf-dfact.pf-zero { color: #C7CDD4; }
 .pct-zero   { background: var(--border); color: var(--text-sub); }
 
 .progress-mini { width: 100%; min-width: 80px; }

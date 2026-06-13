@@ -6,7 +6,7 @@
   <title>РНП Запусков</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=15">
+  <link rel="stylesheet" href="/style.css?v=16">
 </head>
 <body class="app-layout">
 
@@ -208,6 +208,16 @@
             </select>
           </div>
         </div>
+
+        <!-- Сводная таблица план/факт по каналам -->
+        <div class="card pf-card">
+          <div class="card-head">
+            <h3>План / Факт по каналам</h3>
+            <span class="pf-hint">по дням; зелёным — где факт ≥ плана, розовым — отставание</span>
+          </div>
+          <div class="pf-wrap"><table class="pf-table" id="channelsTable"></table></div>
+        </div>
+
         <div id="channelDetails" class="ch-list"></div>
 
         <!-- Unmatched labels block -->
@@ -444,6 +454,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=14"></script>
+  <script src="/app.js?v=15"></script>
 </body>
 </html>
