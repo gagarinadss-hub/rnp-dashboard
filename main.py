@@ -32,7 +32,7 @@ DEMO_MODE = False
 CACHE_FILE = BASE_DIR / "data_cache.json"
 
 # ── Importer config ─────────────────────────────────────────────────────────
-IMPORT_TTL = int(os.getenv("IMPORT_TTL", "600"))   # секунды между авто-импортами (по умолч. 10 мин)
+IMPORT_TTL = int(os.getenv("IMPORT_TTL", "300"))   # секунды между авто-импортами (по умолч. 5 мин)
 _import_task: asyncio.Task | None = None
 
 
