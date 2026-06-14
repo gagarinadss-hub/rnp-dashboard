@@ -792,8 +792,9 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         "daily_actuals":   {date_str: count_int},
     }
     """
-    live_ch_actuals  = (live_override or {}).get("channel_actuals") or {}
-    live_daily_map   = (live_override or {}).get("daily_actuals") or {}
+    live_ch_actuals    = (live_override or {}).get("channel_actuals") or {}
+    live_daily_map     = (live_override or {}).get("daily_actuals") or {}
+    live_channel_daily = (live_override or {}).get("channel_daily") or {}
     with get_db() as conn:
         l = conn.execute(
             "SELECT id, name, reg_start, reg_end, event_date, event_end_date, total_plan, is_active, plan_curve_ref, plan_curve_manual FROM launches WHERE id=?",
@@ -877,20 +878,24 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             total_actual_ch = sum(daily_actual)
             ch_plan = ch["plan"] or 0
 
-            # ── Живой Справочник: подменяем факт канала на доверенное число ──
+            # ── Факт канала из raw: дневная разбивка по реальным датам ──
             if ch["ch_name"] in live_ch_actuals:
                 live_a = int(live_ch_actuals[ch["ch_name"]])
-                db_sum = sum(daily_actual)
-                if db_sum > 0:
-                    # сохраняем форму кривой канала из БД, масштабируем к live
-                    daily_actual = [round(x * live_a / db_sum) for x in daily_actual]
-                    drift = live_a - sum(daily_actual)
-                    if daily_actual:
-                        daily_actual[-1] += drift
+                cd = live_channel_daily.get(ch["ch_name"])
+                if cd is not None:
+                    # реальный факт канала по дням (никаких будущих дней)
+                    daily_actual = [cd.get(day_dates[i], 0) for i in range(total_days)]
+                    total_actual_ch = sum(daily_actual)
                 else:
-                    # нет дневной разбивки в БД — раскладываем по кривой плана
-                    daily_actual = _distribute_plan(live_a, total_days, plan_fractions)
-                total_actual_ch = live_a
+                    db_sum = sum(daily_actual)
+                    if db_sum > 0:
+                        daily_actual = [round(x * live_a / db_sum) for x in daily_actual]
+                        drift = live_a - sum(daily_actual)
+                        if daily_actual:
+                            daily_actual[-1] += drift
+                    else:
+                        daily_actual = _distribute_plan(live_a, total_days, plan_fractions)
+                    total_actual_ch = live_a
 
             # Distribute plan across days (by reference curve, else evenly)
             daily_plan = _distribute_plan(ch_plan, total_days, plan_fractions)
@@ -1533,6 +1538,7 @@ def aggregate_fact_from_raw(launch_id: int) -> dict:
     seen_id, seen_ph = set(), set()
     by_day = defaultdict(int)
     by_channel = defaultdict(int)
+    by_channel_day = defaultdict(lambda: defaultdict(int))   # cid -> {date: count}
     unknown_by_day = defaultdict(int)
     total = 0
     for r in rows:
@@ -1551,12 +1557,14 @@ def aggregate_fact_from_raw(launch_id: int) -> dict:
             unknown_by_day[d] += 1
         else:
             by_channel[cid] += 1
+            by_channel_day[cid][d] += 1
 
     return {
         "total_unique": total,
         "rows_raw": len(rows),
         "by_day": dict(sorted(by_day.items())),
         "by_channel": dict(by_channel),
+        "by_channel_day": {cid: dict(dd) for cid, dd in by_channel_day.items()},
         "unknown_by_day": dict(sorted(unknown_by_day.items())),
         "unknown_total": sum(unknown_by_day.values()),
     }
@@ -1576,16 +1584,26 @@ def build_raw_override(launch_id: int) -> dict | None:
         ).fetchall()
     id2name = {r["id"]: r["name"] for r in ch_rows}
 
+    from collections import defaultdict
     channel_actuals = {nm: 0 for nm in id2name.values()}   # все каналы запуска -> 0 базово
+    channel_daily = defaultdict(lambda: defaultdict(int))  # name -> {date: count}
     for cid, cnt in agg["by_channel"].items():
         nm = id2name.get(cid)
         if nm:
             channel_actuals[nm] = channel_actuals.get(nm, 0) + cnt
+            for d, c in agg.get("by_channel_day", {}).get(cid, {}).items():
+                channel_daily[nm][d] += c
     # нераспознанные -> канал «без метки», если он привязан к запуску
     if agg.get("unknown_total", 0) > 0 and "без метки" in channel_actuals:
         channel_actuals["без метки"] = channel_actuals.get("без метки", 0) + agg["unknown_total"]
+        for d, c in agg.get("unknown_by_day", {}).items():
+            channel_daily["без метки"][d] += c
 
-    return {"channel_actuals": channel_actuals, "daily_actuals": agg["by_day"]}
+    return {
+        "channel_actuals": channel_actuals,
+        "daily_actuals": agg["by_day"],
+        "channel_daily": {nm: dict(dd) for nm, dd in channel_daily.items()},
+    }
 
 
 def get_unknown_utm(launch_id: int) -> list[dict]:
