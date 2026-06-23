@@ -18,8 +18,8 @@ BASE_DIR = Path(__file__).parent
 SHEET_ID_REGS    = '10674VDmFpo1s_NU02H0ScJ1BqYyWBwlAGh4OMBOZMHA'  # новая таблица с рег.
 SHEET_ID_REF_BOOK = '1bDbcketkM9SC5FY0rMHvwy8bUaf4Op3hPxFQJHBKH9E'  # Справочник
 
-MAIN_SHEET_NAME = 'ЗАПУСК 16-17 ИЮНЯ'
-REF_SHEET_NAME  = 'РЕФЕРАЛКА 16-17 ИЮНЯ'  # реферальный лист (формат как у основного)
+MAIN_SHEET_NAME = 'КОНТЕНТ НА ВАЙБЕ 25.06'
+REF_SHEET_NAME  = ''  # у этого запуска отдельного реф-листа нет
 
 # ── Hardcoded extras (подтверждены пользователем) ─────────────────────────
 _EXTRA = {
