@@ -229,6 +229,13 @@ def run_import(launch_id: int) -> dict:
         log.error(f'[importer] не могу открыть таблицу регистраций: {e}')
         return {'error': str(e)}
 
+    # Имя листа — на каждый запуск своё (fallback на глобальные константы)
+    try:
+        import db as _db
+        main_sheet, ref_sheet = _db.get_launch_sheets(launch_id)
+    except Exception:
+        main_sheet, ref_sheet = MAIN_SHEET_NAME, REF_SHEET_NAME
+
     channel_day: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     # Трекаем ВСЕ метки: (src, med, platform) -> {channel, count}
     raw_stats: dict[tuple, dict] = {}
@@ -237,7 +244,7 @@ def run_import(launch_id: int) -> dict:
 
     # Основной лист
     try:
-        ws_main = sh_new.worksheet(MAIN_SHEET_NAME)
+        ws_main = sh_new.worksheet(main_sheet)
         all_main = ws_main.get_all_values()
         hdr = [str(c).strip().lower() for c in all_main[0]] if all_main else []
 
@@ -296,7 +303,9 @@ def run_import(launch_id: int) -> dict:
 
     # Лист рефералок
     try:
-        ws_ref = sh_new.worksheet(REF_SHEET_NAME)
+        if not ref_sheet:
+            raise ValueError('нет реф-листа')
+        ws_ref = sh_new.worksheet(ref_sheet)
         for r in ws_ref.get_all_values()[1:]:
             if not any(c.strip() for c in r):
                 continue

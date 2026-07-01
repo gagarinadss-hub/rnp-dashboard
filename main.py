@@ -419,7 +419,7 @@ def update_launch_endpoint(launch_id: int, body: dict):
     Принимает любое подмножество: name, reg_start, reg_end, event_date,
     event_end_date, total_plan."""
     from db import update_launch, upsert_launch_channels
-    allowed = {"name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan"}
+    allowed = {"name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan", "sheet_name", "ref_sheet_name"}
     fields = {k: v for k, v in body.items() if k in allowed}
     channels = body.get("channels")
     if not fields and not channels:

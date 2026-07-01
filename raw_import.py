@@ -115,9 +115,10 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
         # data_rows — список (строка, is_referral). Реф-строки форсим в «Рефка».
         if rows is None:
             import gspread
-            from sheets_importer import SHEET_ID_REGS, MAIN_SHEET_NAME, REF_SHEET_NAME, _build_mapping
+            from sheets_importer import SHEET_ID_REGS, _build_mapping
             sheet_id = sheet_id or SHEET_ID_REGS
-            sheet_name = sheet_name or MAIN_SHEET_NAME
+            # имя листа — на каждый запуск своё (fallback на глобальное)
+            main_name, ref_name = (sheet_name, None) if sheet_name else db.get_launch_sheets(launch_id)
             gc = gspread.service_account(filename=str(BASE_DIR / "credentials.json"))
             try:
                 mapping = _build_mapping(gc)
@@ -125,13 +126,14 @@ def import_registrations_from_sheets(launch_id=None, source: str = "manual",
                 log.warning(f"[raw_import] Справочник недоступен: {e}")
                 mapping = {}
             book = gc.open_by_key(sheet_id)
-            main_rows = book.worksheet(sheet_name).get_all_values()[1:]
+            main_rows = book.worksheet(main_name).get_all_values()[1:]
             data_rows = [(r, False) for r in main_rows]
-            try:                       # реф-лист (опционально)
-                ref_rows = book.worksheet(REF_SHEET_NAME).get_all_values()[1:]
-                data_rows += [(r, True) for r in ref_rows]
-            except Exception as e:
-                log.info(f"[raw_import] реф-лист не прочитан: {e}")
+            if ref_name:               # реф-лист (опционально)
+                try:
+                    ref_rows = book.worksheet(ref_name).get_all_values()[1:]
+                    data_rows += [(r, True) for r in ref_rows]
+                except Exception as e:
+                    log.info(f"[raw_import] реф-лист не прочитан: {e}")
         else:
             mapping = {}            # mock-режим: без Справочника
             data_rows = [(r, False) for r in rows]

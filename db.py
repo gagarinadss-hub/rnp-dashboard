@@ -97,6 +97,9 @@ def init_db():
             "ALTER TABLE launch_channels ADD COLUMN created_at TEXT",
             "ALTER TABLE launch_channels ADD COLUMN updated_at TEXT",
             "ALTER TABLE raw_registrations ADD COLUMN phone TEXT",
+            # Имя листа Google Sheets на каждый запуск (иначе глобальное)
+            "ALTER TABLE launches ADD COLUMN sheet_name TEXT",
+            "ALTER TABLE launches ADD COLUMN ref_sheet_name TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -1494,6 +1497,18 @@ def get_import_runs(limit: int = 20) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_launch_sheets(launch_id: int):
+    """Имя основного и реф-листа для запуска. Fallback — глобальные константы."""
+    from sheets_importer import MAIN_SHEET_NAME, REF_SHEET_NAME
+    with get_db() as conn:
+        r = conn.execute(
+            "SELECT sheet_name, ref_sheet_name FROM launches WHERE id=?", (launch_id,)
+        ).fetchone()
+    if r and r["sheet_name"]:
+        return r["sheet_name"], (r["ref_sheet_name"] or None)
+    return MAIN_SHEET_NAME, REF_SHEET_NAME
+
+
 def get_launch_windows() -> list[dict]:
     """Окна запусков для привязки регистраций по дате: [{id, reg_start, reg_end, is_active}]."""
     with get_db() as conn:
@@ -2068,7 +2083,7 @@ def update_launch(launch_id: int, **fields) -> dict:
     """Точечное обновление метаданных запуска. Обновляются только переданные
     поля из белого списка. Пустая строка трактуется как очистка (NULL).
     Возвращает {id, updated:[...]} либо None, если запуск не найден."""
-    allowed = ("name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan")
+    allowed = ("name", "reg_start", "reg_end", "event_date", "event_end_date", "total_plan", "sheet_name", "ref_sheet_name")
     sets, params, updated = [], [], []
     for key in allowed:
         if key in fields:
