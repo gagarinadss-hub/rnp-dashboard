@@ -842,9 +842,9 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
             (launch_id,)
         ).fetchall()
 
-        # План канала показываем РОВНО как введён (без масштабирования к total).
-        # Если сумма планов каналов != плана запуска — это сигнал, что план
-        # ещё не разложен полностью (команда видит расхождение и доносит).
+        # План канала показываем РОВНО как введён. План запуска = сумме планов
+        # каналов (см. ниже total_plan), поэтому расхождения между «планом по
+        # каналам» и «планом запуска» не возникает.
 
         # yesterday / day-before indices (0-based)
         yesterday_idx   = days_elapsed - 2   # day before today
@@ -937,7 +937,11 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
                 "forecast":      ch_forecast,
             })
 
-        total_plan   = l["total_plan"] or sum(c["plan"] for c in channels)
+        # План запуска = сумма планов каналов (единый источник истины), чтобы
+        # «план по каналам» и «план запуска» всегда совпадали, без расхождений.
+        # Если каналы ещё не заведены — берём заданный план запуска.
+        ch_plan_sum  = sum(c["plan"] for c in channels)
+        total_plan   = ch_plan_sum if ch_plan_sum > 0 else (l["total_plan"] or 0)
         total_actual = sum(c["actual"] for c in channels)
 
         # Also check null-channel daily totals (historical data)
@@ -998,69 +1002,52 @@ def get_dashboard_from_db(launch_id: int, live_override: dict | None = None) -> 
         total_remaining = max(0, total_plan - total_actual)
         pace_needed     = round(total_remaining / days_remaining) if days_remaining > 0 else 0
 
-        # ── Прогноз по методологии: проекция через накопленную долю кривой ──
-        # Кривая — ИЗ ИСТОРИИ последних 5 запусков (агрегатная), а не фиксированная.
-        # Проекция = накопл.факт / накопл.доля к текущему дню. «Вялые» дни
-        # (<15% ожидания) отбрасываем, чтобы мягкий старт не занижал прогноз.
+        # ── Прогноз: «собрано на сегодня + план на оставшиеся дни» ──
+        # Честная и устойчивая методология. НЕ экстраполируем всплеск одного дня
+        # (раньше это делило факт на крошечную дневную долю и раздувало финал до
+        # сотен процентов). Логика простая: то, что уже собрано за прошедшие дни,
+        # плюс плановый объём на оставшиеся дни по замороженной кривой.
+        #   • до старта (days_elapsed=0): прогноз = план запуска;
+        #   • по ходу: прогноз = факт_на_сегодня + план_на_остаток;
+        #   • на финише (остатка нет): прогноз = факт.
         fcurve = plan_fractions if plan_fractions else _forecast_fractions(total_days)
 
-        # Проекция строится по ЗАВЕРШЁННЫМ дням (текущий день ещё идёт —
-        # не занижаем им). На день 1 (завершённых нет) — по частичному дню 1.
-        _completed = max(0, days_elapsed - 1)
-        _proj_range = _completed if _completed > 0 else days_elapsed
-        good_idxs = []
-        for i in range(_proj_range):
-            expected = total_plan * fcurve[i] if i < len(fcurve) else 0
-            if expected > 0 and daily_total_actual[i] >= expected * 0.15:
-                good_idxs.append(i)
-
-        if good_idxs:
-            cum_actual = sum(daily_total_actual[i] for i in good_idxs)
-            cum_frac   = sum(fcurve[i] for i in good_idxs)
-            projected  = int(cum_actual / cum_frac) if cum_frac > 0 else total_actual
-        else:
-            cum_frac  = sum(fcurve[:_proj_range])
-            projected = int(sum(daily_total_actual[:_proj_range]) / cum_frac) if cum_frac > 0 else total_actual
-        projected = max(projected, total_actual)   # не ниже уже накопленного
-
-        # Сценарии: реалистичный — накопл.метод. Опт/пес — диапазон неопределённости
-        # ТОЛЬКО по оставшимся дням: накопленный факт уже зафиксирован, поэтому
-        # band = факт + лучший/худший дневной темп × доля оставшихся дней.
-        # Темп берём по «весомым» дням (доля >= 5%), иначе деление на крошечную
-        # долю (последний день ~0.001 / добитые дни) даёт абсурдные значения.
-        # Для завершённого запуска оставшихся дней нет → опт = пес = реал = факт.
+        observed       = sum(daily_total_actual[:days_elapsed])          # факт за прошедшие дни
+        remaining_frac = sum(fcurve[days_elapsed:total_days])            # доля кривой на остаток
+        plan_remaining = total_plan * remaining_frac
+        projected      = observed + int(round(plan_remaining))
+        projected      = max(projected, total_actual)                    # не ниже уже набранного
         proj_realistic = projected
-        remaining_frac = sum(fcurve[i] for i in range(days_elapsed, total_days))
-        observed       = sum(daily_total_actual[:days_elapsed])
-        rates = [
-            daily_total_actual[i] / fcurve[i]
-            for i in good_idxs
-            if fcurve[i] >= 0.05
-        ]
-        if rates and remaining_frac > 0:
-            proj_optimistic  = int(observed + max(rates) * remaining_frac)
-            proj_pessimistic = int(observed + min(rates) * remaining_frac)
-            # удерживаем в разумной полосе вокруг реалистичного
-            proj_optimistic  = min(proj_optimistic,  int(projected * 1.5))
-            proj_pessimistic = max(proj_pessimistic, int(projected * 0.5))
-            proj_optimistic  = max(proj_optimistic,  projected)
-            proj_pessimistic = min(proj_pessimistic, projected)
+
+        # Вилка: остаток может прийти по среднему темпу ЗАВЕРШЁННЫХ дней
+        # (лучший/худший сценарий), но реалистичный — по плану.
+        completed_days = max(0, days_elapsed - 1)
+        done_vals      = daily_total_actual[:completed_days] if completed_days > 0 else []
+        remaining_days = max(0, total_days - days_elapsed)
+        if done_vals and sum(done_vals) > 0 and remaining_days > 0:
+            avg_day        = sum(done_vals) / len(done_vals)
+            pace_remaining = avg_day * remaining_days
+            proj_optimistic  = observed + int(round(max(plan_remaining, pace_remaining)))
+            proj_pessimistic = observed + int(round(min(plan_remaining, pace_remaining)))
         else:
             proj_optimistic  = projected
             proj_pessimistic = projected
+        proj_optimistic  = max(proj_optimistic,  proj_realistic)
+        proj_pessimistic = min(proj_pessimistic, proj_realistic)
+        proj_pessimistic = max(proj_pessimistic, total_actual)
 
         projected_total = proj_realistic
         projected_pct   = round(projected_total / total_plan * 100, 1) if total_plan > 0 else 0
 
-        # Кумулятивная линия прогноза: факт за прошедшие дни + проекция по кривой
-        daily_forecast = [int(projected * f) for f in fcurve]
+        # Кумулятивная линия прогноза: факт за прошедшие дни + план на остаток
+        daily_forecast = [int(round(total_plan * f)) for f in fcurve]
         forecast_cum   = _cumulative(daily_total_actual[:days_elapsed])
         for i in range(days_elapsed, total_days):
             inc = daily_forecast[i] if i < len(daily_forecast) else 0
             forecast_cum.append((forecast_cum[-1] if forecast_cum else 0) + inc)
 
-        n_good = len(good_idxs)
-        confidence = "низкая" if n_good <= 1 else ("средняя" if n_good <= 2 else "высокая")
+        # Уверенность растёт по мере накопления завершённых дней
+        confidence = "низкая" if completed_days <= 1 else ("средняя" if completed_days <= 3 else "высокая")
 
         # Best / lag channels (sorted by pace_ratio)
         active_chs    = [c for c in channels if c["plan"] > 0 and c["actual"] > 0]
